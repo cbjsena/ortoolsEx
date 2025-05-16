@@ -1,0 +1,44 @@
+{
+  "test_case_name": "1x5 cells, 2 CFs & 2 TFTs",
+  "panel_dimensions": {"rows": 1, "cols": 5},
+  "cf_panels": [
+    {
+      "id": "CF1",
+      "type": "CF",
+      "rows": 1,
+      "cols": 5,
+      "defect_map": [
+        [0, 1, 0, 1, 0]
+      ]
+    },
+    {
+      "id": "CF2",
+      "type": "CF",
+      "rows": 1,
+      "cols": 5,
+      "defect_map": [
+        [1, 0, 0, 0, 1]
+      ]
+    }
+  ],
+  "tft_panels": [
+    {
+      "id": "TFT1",
+      "type": "TFT",
+      "rows": 1,
+      "cols": 5,
+      "defect_map": [
+        [0, 0, 1, 0, 0]
+      ]
+    },
+    {
+      "id": "TFT2",
+      "type": "TFT",
+      "rows": 1,
+      "cols": 5,
+      "defect_map": [
+        [1, 0, 1, 0, 1]
+      ]
+    }
+  ]
+}

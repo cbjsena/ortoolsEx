@@ -1,0 +1,68 @@
+{
+  "test_case_name": "2x2 cells, 3 CFs & 3 TFTs",
+  "panel_dimensions": {"rows": 2, "cols": 2},
+  "cf_panels": [
+    {
+      "id": "CF1",
+      "type": "CF",
+      "rows": 2,
+      "cols": 2,
+      "defect_map": [
+        [0, 1],
+        [0, 0]
+      ]
+    },
+    {
+      "id": "CF2",
+      "type": "CF",
+      "rows": 2,
+      "cols": 2,
+      "defect_map": [
+        [1, 1],
+        [0, 0]
+      ]
+    },
+    {
+      "id": "CF3",
+      "type": "CF",
+      "rows": 2,
+      "cols": 2,
+      "defect_map": [
+        [0, 0],
+        [0, 1]
+      ]
+    }
+  ],
+  "tft_panels": [
+    {
+      "id": "TFT1",
+      "type": "TFT",
+      "rows": 2,
+      "cols": 2,
+      "defect_map": [
+        [0, 0],
+        [1, 0]
+      ]
+    },
+    {
+      "id": "TFT2",
+      "type": "TFT",
+      "rows": 2,
+      "cols": 2,
+      "defect_map": [
+        [0, 1],
+        [0, 1]
+      ]
+    },
+    {
+      "id": "TFT3",
+      "type": "TFT",
+      "rows": 2,
+      "cols": 2,
+      "defect_map": [
+        [1, 0],
+        [0, 0]
+      ]
+    }
+  ]
+}
