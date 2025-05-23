@@ -2,6 +2,11 @@
 
 import json
 from ortools.linear_solver import pywraplp  # OR-Tools MIP solver
+from logging_config import setup_logger
+import logging
+
+setup_logger()
+logger = logging.getLogger(__name__)
 
 with open('testcase/test2.json', 'r', encoding='utf-8') as f:
     test_data = json.load(f)
@@ -10,7 +15,7 @@ cf_panels = test_data.get('cf_panels')
 tft_panels = test_data.get('tft_panels')
 
 # --- run_matching_algorithm 함수 정의 ---
-def run_matching_algorithm(cf_panels, tft_panels):
+def run_optimization(cf_panels, tft_panels):
     num_cf = len(cf_panels)
     num_tft = len(tft_panels)
 
@@ -159,11 +164,11 @@ def run_matching_algorithm(cf_panels, tft_panels):
 
 
 # OR-Tools를 사용하여 매칭 알고리즘 실행
-matched_pairs, total_yield, error_msg = run_matching_algorithm(cf_panels, tft_panels)
+matched_pairs, total_yield, error_msg = run_optimization(cf_panels, tft_panels)
 
-print("Matched Pairs:")
+logger.info("Matched Pairs:")
 for pair in matched_pairs:
-    print(f"CF ID: {pair['cf_id']}, TFT ID: {pair['tft_id']}, Yield: {pair['yield_value']}")
-print(f"Total Yield: {total_yield}")
-print(f"Error Message: {error_msg}")
+    logger.info(f"CF ID: {pair['cf_id']}, TFT ID: {pair['tft_id']}, Yield: {pair['yield_value']}")
+logger.info(f"Total Yield: {total_yield}")
+logger.info(f"Error Message: {error_msg}")
 # 예시 데이터
