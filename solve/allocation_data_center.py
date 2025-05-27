@@ -8,9 +8,9 @@ from math import floor
 setup_logger()
 logger = logging.getLogger(__name__)  # settin
 
-with open('testcase/test1.json', 'r', encoding='utf-8') as f:
+with open('../allocation_data_center/testcase/test2.json', 'r', encoding='utf-8') as f:
     test_data = json.load(f)
-# test_data = json.loads("testcase/test1.json")
+# test_data = json.loads("testcase/matcing_cf_tft_test1.json")
 global_constraints = test_data.get('global_constraints')
 server_data = test_data.get('server_types')
 demands_data =test_data.get('service_demands')
@@ -45,19 +45,19 @@ def run_optimization(global_constraints, server_data, demand_data):
     # 여기서는, 각 서비스가 특정 양의 CPU, RAM, Storage를 요구하고,
     # 각 서버이 특정 양의 CPU, RAM, Storage를 제공한다고 가정.
     Alloc = {}
-    for s_idx in range(num_demand_data):
-        service = demand_data[s_idx]
-        # 서비스 s의 최대 유닛 수 (수요) 만큼 변수 생성 고려
-        # 또는, 총 제공 가능한 서비스 유닛을 변수로 할 수도 있음.
-        # 여기서는 서비스 s를 서버 i에서 몇 '유닛'만큼 제공할지를 변수로 설정.
-        # 이 '유닛'은 해당 서비스의 요구 자원에 맞춰짐.
-        max_units_s = service.get('max_units', infinity) if service.get('max_units') is not None else infinity
-        for i_idx in range(num_server_data):
+    for i_idx in range(num_server_data):
+        for s_idx in range(num_demand_data):
+            service = demand_data[s_idx]
+            # 서비스 s의 최대 유닛 수 (수요) 만큼 변수 생성 고려
+            # 또는, 총 제공 가능한 서비스 유닛을 변수로 할 수도 있음.
+            # 여기서는 서비스 s를 서버 i에서 몇 '유닛'만큼 제공할지를 변수로 설정.
+            # 이 '유닛'은 해당 서비스의 요구 자원에 맞춰짐.
             # 서비스 s를 서버 i에서 몇 유닛 제공할지 (이산적인 서비스 유닛으로 가정)
+            max_units_s = service.get('max_units', infinity) if service.get('max_units') is not None else infinity
             Alloc[s_idx, i_idx] = solver.IntVar(0, max_units_s if max_units_s != infinity else solver.infinity(),
-                                               f'Dm{s_idx+1}_Sv{i_idx+1}')
+                                               f'Alloc{i_idx+1}_{s_idx+1}')
 
-    logger.solve(f"Alloc_ji: 서버 i에 할당된 서비스 j의 용량, 총 {len(Alloc)}개 생성")
+    logger.solve(f"Alloc_ij: 서버 i에 할당된 서비스 j의 용량, 총 {len(Alloc)}개 생성")
     # 모든 변수를 출력하기는 너무 많을 수 있으므로, 일부만 예시로 출력하거나 요약
     if len(Alloc) > 10:  # 변수가 많을 경우 일부만 출력
         logger.solve(
@@ -65,11 +65,11 @@ def run_optimization(global_constraints, server_data, demand_data):
     else:
         for (s_idx, i_idx), var in Alloc.items():
             logger.solve(
-                f"  - {var.name()} (서비스: {demand_data[s_idx].get('id', s_idx)}, 서버: {server_data[i_idx].get('id', i_idx)}), 범위: [{var.lb()}, {var.ub()}]")
-    logger.solve(f"Created {len(svr_name)} Sv[] variables and {len(Alloc)} Dm[]_Sv[] variables.")
+                f"  - {var.name()} (서버: {server_data[i_idx].get('id', i_idx)}),서비스: {demand_data[s_idx].get('id', s_idx)},  범위: [{var.lb()}, {var.ub()}]")
+    logger.solve(f"Created {len(svr_name)} Sv variables and {len(Alloc)} Alloc variables.")
 
     # --- 제약 조건 ---
-    logger.solve("\n**제약 조건:**")
+    logger.solve("**제약 조건:**")
 
     # 1. 총 예산, 전력, 공간 제약
     total_budget_constraint = solver.Constraint(0, global_constraints.get('total_budget', infinity), 'total_budget')
@@ -147,7 +147,7 @@ def run_optimization(global_constraints, server_data, demand_data):
             # 모든 계수가 0이 아닌 경우에만 제약을 추가 (자원 요구사항이 없는 경우 불필요)
             if any(c != 0 for c in coeffs):
                 constraint_expr = solver.Sum(terms[j] * coeffs[j] for j in range(len(terms)))
-                constraint_name = f'req_{resource}_{server_type.get("id", i_idx)}'
+                constraint_name = f'con_{resource}_{server_type.get("id", i_idx)}'
                 # sum(X_si[s,i] * req_res[s]) <= Ns[i] * server_res[i] 형태로 표현 가능
                 # 즉, sum(X_si[s,i] * req_res[s]) - Ns[i] * server_res[i] <= 0
                 constraint = solver.Add(constraint_expr <= 0, constraint_name)
@@ -184,6 +184,22 @@ def run_optimization(global_constraints, server_data, demand_data):
     logger.solve(f"\n**목표 함수:** 총 이익 극대화 (서비스 수익 - 서버 구매 비용)")
     logger.solve(f"  목표: Maximize sum(X_si * revenue_per_unit) - sum(Ns * cost)")
 
+    obj_terms = []
+    for i in range(num_server_data):
+        coff = server_data[i].get('cost', 0)
+        if coff != 0:
+            obj_terms.append(f"{-coff}*{svr_name[i].name()}")
+
+    for s_idx in range(num_demand_data):
+        service = demand_data[s_idx]
+        for i_idx in range(num_server_data):
+            if (s_idx, i_idx) in Alloc:
+                objective.SetCoefficient(Alloc[s_idx, i_idx], service.get('revenue_per_unit', 0))
+                coff = service.get('revenue_per_unit',0)
+                if coff != 0:
+                    obj_terms.append(f"{coff}*{Alloc[s_idx, i_idx].name()}")
+    obj_expr_str = " + ".join(obj_terms)
+    logger.solve(f"obj_exp: {obj_expr_str}")
     # --- 문제 해결 ---
     logger.info("Solving Data Center Capacity model...")
     solve_start_time = datetime.datetime.now()

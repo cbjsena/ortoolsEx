@@ -8,9 +8,9 @@ import logging
 setup_logger()
 logger = logging.getLogger(__name__)
 
-with open('testcase/test2.json', 'r', encoding='utf-8') as f:
+with open('../test_data/allocation_datacenter_data/matching_cf_tft_test2.json', 'r', encoding='utf-8') as f:
     test_data = json.load(f)
-# test_data = json.loads("testcase/test1.json")
+# test_data = json.loads("testcase/matcing_cf_tft_test1.json")
 cf_panels = test_data.get('cf_panels')
 tft_panels = test_data.get('tft_panels')
 
