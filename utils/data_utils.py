@@ -107,17 +107,6 @@ def save_allocation_data_center_json_data(json_data):
     filename_pattern = f"svr{num_server}_svc{num_service}"
     return save_json_data(json_data, 'allocation_datacenter_data', filename_pattern)
 
-def create_vrp_json_data(depot_location, customer_locations, num_vehicles, num_depots):
-
-    input_data = {
-        "timestamp": datetime.datetime.now().isoformat(),
-        "problem_type": "VRP",
-        "depot_location": depot_location,
-        "customer_locations": customer_locations,
-        "num_vehicles": num_vehicles,
-        "num_depots":num_depots,
-    }
-    return input_data
 
 def save_vrp_json_data(input_data):
     num_depots = input_data.get('num_depots')
