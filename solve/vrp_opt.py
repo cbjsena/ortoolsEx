@@ -9,10 +9,6 @@ import logging
 setup_logger()
 logger = logging.getLogger(__name__)
 
-with open('../test_data/routing_vrp_data/dep1_cus3_veh1.json', 'r', encoding='utf-8') as f:
-    input_data = json.load(f)
-# test_data = json.loads("testcase/matcing_cf_tft_test1.json")
-
 
 def run_vrp_optimizer(input_data):
     """
@@ -147,12 +143,9 @@ def run_vrp_optimizer(input_data):
     return vrp_results, error_msg, processing_time_ms
 
 
-def run_cvrp_optimizer():
-    return None
-
-
-def run_pdp_optimizer():
-    return None
+with open('../test_data/routing_vrp_data/dep1_cus3_veh1.json', 'r', encoding='utf-8') as f:
+    input_data = json.load(f)
+# test_data = json.loads("testcase/matcing_cf_tft_test1.json")
 
 vrp_results_data, error_msg_opt, processing_time_ms = run_vrp_optimizer(input_data)
 
