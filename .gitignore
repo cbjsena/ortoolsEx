@@ -6,7 +6,7 @@ venv/
 secrets/
 *.env
 .env.*
-
+test_data/
 # Python 캐시 파일 및 컴파일된 파일
 __pycache__/
 *.py[cod]
