@@ -235,6 +235,7 @@ def run_sports_scheduling_optimizer_ortools1(input_data):
 
 
 def run_sports_scheduling_optimizer_ortools2(input_data):
+    #TODO ortools MODEL 파악
     """
     OR-Tools CP-SAT를 사용하여 Sports Scheduling 문제를 해결합니다.
     Gurobi2 모델과 동일한 로직을 구현합니다.
@@ -706,6 +707,7 @@ def run_sports_scheduling_optimizer_gurobi1(input_data):
 
 
 def run_sports_scheduling_optimizer_gurobi2(input_data):
+    # TODO gurobi MODEL 파악
     """
     Gurobi를 사용하여 Sports Scheduling 문제를 해결합니다.
     """
