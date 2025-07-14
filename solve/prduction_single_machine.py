@@ -1,3 +1,4 @@
+from common_run_opt import get_solving_time_sec
 from ortools.sat.python import cp_model # CP-SAT 솔버 사용
 import json
 import datetime

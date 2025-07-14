@@ -1,4 +1,4 @@
-from ortools.graph.python import linear_sum_assignment # 할당 문제 전용 솔버
+from common_run_opt import get_solving_time_sec
 from ortools.linear_solver import pywraplp
 import datetime
 import json
@@ -325,7 +325,8 @@ def run_skill_matching_optimizer(input_data):
             error_msg = f"최적 할당을 찾지 못했습니다. (솔버 상태: {status})"
         logger.error(f"Skill matching optimization failed: {error_msg}")
 
-    return results, error_msg, processing_time_ms
+    return results, error_msg, get_solving_time_sec(solver)
+
 with open('../test_data/matching_resource_data/resource5_project3.json', 'r', encoding='utf-8') as f:
     input_data = json.load(f)
 
@@ -336,3 +337,5 @@ unmatched, formatted_html = validate_required_skills(input_data)
 #         print(f"skill: {key}, project:{value}")
 # else:
 results_data, error_msg_opt, processing_time_ms = run_skill_matching_optimizer(input_data)
+logger.info(run_skill_matching_optimizer(input_data))
+

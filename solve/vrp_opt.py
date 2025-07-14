@@ -1,8 +1,10 @@
+from common_run_opt import get_solving_time_sec
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp # OR-Tools VRP
 import datetime  # 파일명 생성 등에 사용 가능
 from math import sqrt
 import json
+from common_run_opt import *
 from logging_config import setup_logger
 import logging
 
@@ -74,18 +76,13 @@ def run_vrp_optimizer(input_data):
     #     routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
     # search_parameters.time_limit.FromSeconds(5) # 시간 제한
 
-    logger.info("Solving VRP model...")
-    solve_start_time = datetime.datetime.now()
-    solution = routing.SolveWithParameters(search_parameters)
-    solve_end_time = datetime.datetime.now()
-    processing_time_ms = (solve_end_time - solve_start_time).total_seconds() * 1000
-    logger.info(f"VRP Solver finished. Status: {routing.status()}, Time: {processing_time_ms:.2f} ms")
+    solution, status, processing_time = ortools_routing_solving_log(routing, search_parameters, "VRP")
 
     # --- 결과 추출 ---
     vrp_results = {'routes': [], 'total_distance': 0, 'dropped_nodes': []}
     error_msg = None
 
-    if solution and routing.status() in [routing_enums_pb2.RoutingSearchStatus.ROUTING_SUCCESS,
+    if solution and status in [routing_enums_pb2.RoutingSearchStatus.ROUTING_SUCCESS,
                                          routing_enums_pb2.RoutingSearchStatus.ROUTING_OPTIMAL]:
         logger.info(f'Objective (total distance): {solution.ObjectiveValue()}')
         vrp_results['total_distance'] = solution.ObjectiveValue() / 100.0  # 원래 거리로 환산
@@ -140,7 +137,7 @@ def run_vrp_optimizer(input_data):
     if error_msg:
         logger.error(f"VRP optimization failed or no solution: {error_msg}")
 
-    return vrp_results, error_msg, processing_time_ms
+    return vrp_results, error_msg, processing_time
 
 
 with open('../test_data/routing_vrp_data/dep1_cus3_veh1.json', 'r', encoding='utf-8') as f:

@@ -1,3 +1,4 @@
+from common_run_opt import get_solving_time_sec
 from ortools.sat.python import cp_model # CP-SAT 솔버 사용
 import json
 import datetime
@@ -65,7 +66,7 @@ def run_flow_shop_optimizer(input_data):
     solve_start_time = datetime.datetime.now()
     status = solver.Solve(model)
     solve_end_time = datetime.datetime.now()
-    processing_time_ms = (solve_end_time - solve_start_time).total_seconds() * 1000
+    processing_time_ms = solver.WallTime()
 
     # 결과 추출
     results = {'schedule': [], 'makespan': 0, 'sequence': []}

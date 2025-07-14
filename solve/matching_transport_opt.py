@@ -1,3 +1,4 @@
+from common_run_opt import get_solving_time_sec, solved_log
 from ortools.graph.python import linear_sum_assignment # 할당 문제 전용 솔버
 from ortools.linear_solver import pywraplp
 import datetime
@@ -21,29 +22,26 @@ def run_matching_transport_optimizer_old(input_data):
     num_tasks = len(input_data['zone_names'])
     cost_matrix=input_data['cost_matrix']
 
-    assignment = linear_sum_assignment.SimpleLinearSumAssignment()
+    solver = linear_sum_assignment.SimpleLinearSumAssignment()
 
     for woker in range(num_workers):
         for task in range(num_tasks):
             if cost_matrix[woker][task] is not None:
-                assignment.add_arc_with_cost(woker, task, int(cost_matrix[woker][task]))
+                solver.add_arc_with_cost(woker, task, int(cost_matrix[woker][task]))
 
     logger.info("Solving the assignment model...")
-    solve_start_time = datetime.datetime.now()
-    status = assignment.solve()
-    solve_end_time = datetime.datetime.now()
-    processing_time_ms = (solve_end_time - solve_start_time).total_seconds() * 1000
-    logger.info(f"Solver finished. Status: {status}, Time: {processing_time_ms:.2f} ms")
+    status = solver.solve()
+    logger.info(f"Solver finished. Status: {status}, Time: {solver.WallTime():.2f} ms")
 
     results = {'assignments':[], 'total_cost':0}
     error_msg = None
 
-    if status == assignment.OPTIMAL:
-        results['total_cost'] =assignment.optimal_cost()
+    if status == solver.OPTIMAL:
+        results['total_cost'] =solver.optimal_cost()
         logger.info(f'Total cost = {results["total_cost"]}')
         for i in range(num_workers):
-            assigned_task = assignment.right_mate(i)
-            cost = assignment.assignment_cost(i)
+            assigned_task = solver.right_mate(i)
+            cost = solver.assignment_cost(i)
             results['assignments'].append({
                 'workder_id': f'기사{i + 1}',
                 'task_id': f'구역 {assigned_task + 1}',
@@ -51,9 +49,9 @@ def run_matching_transport_optimizer_old(input_data):
             })
             logger.debug(f'Worker {i} assigned to task {assigned_task} with a cost of {cost}')
 
-    elif status == assignment.INFEASIBLE:
+    elif status == solver.INFEASIBLE:
         error_msg = "실행 불가능한 문제입니다. 모든 작업자/작업 쌍에 대한 비용이 정의되었는지 확인하세요."
-    elif status == assignment.POSSIBLE_OVERFLOW:
+    elif status == solver.POSSIBLE_OVERFLOW:
         error_msg = "계산 중 오버플로우가 발생했습니다. 비용 값의 크기를 확인하세요."
     else:
         error_msg = f"최적 할당을 찾지 못했습니다. (솔버 상태: {status})"
@@ -103,11 +101,8 @@ def run_matching_transport_optimizer_new(input_data):
     solver.Minimize(solver.Sum(objective_terms))
 
     logger.info("Solving the assignment model...")
-    solve_start_time = datetime.datetime.now()
     status = solver.Solve()
-    solve_end_time = datetime.datetime.now()
-    processing_time_ms = (solve_end_time - solve_start_time).total_seconds() * 1000
-    logger.info(f"Solver finished. Status: {status}, Time: {processing_time_ms:.2f} ms")
+    solved_log(solver,  status,'assignment')
 
     results = {'assignments':[], 'total_cost':0}
     error_msg = None
@@ -134,9 +129,10 @@ def run_matching_transport_optimizer_new(input_data):
     if error_msg:
         logger.error(f"Assignment optimization failed: {error_msg}")
 
-    return results, error_msg, processing_time_ms
+    return results, error_msg, get_solving_time_sec(solver)
 
-with open('../test_data/matching_transport_data/driver5_zone5.json', 'r', encoding='utf-8') as f:
+with open('../test_data/matching_transport_data/test.json', 'r', encoding='utf-8') as f:
     input_data = json.load(f)
 
-results_data, error_msg_opt, processing_time_ms = run_matching_transport_optimizer_new(input_data)
+results_data, error_msg_opt, processing_time = run_matching_transport_optimizer_new(input_data)
+logger.info(processing_time)

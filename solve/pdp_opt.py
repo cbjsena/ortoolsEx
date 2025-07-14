@@ -1,3 +1,4 @@
+from common_run_opt import get_solving_time_sec
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp # OR-Tools VRP
 import datetime  # 파일명 생성 등에 사용 가능
