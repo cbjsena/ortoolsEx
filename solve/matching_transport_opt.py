@@ -1,4 +1,4 @@
-from common_run_opt import get_solving_time_sec, solved_log
+from common_utils.common_run_opt import get_solving_time_sec, solving_log
 from ortools.graph.python import linear_sum_assignment # 할당 문제 전용 솔버
 from ortools.linear_solver import pywraplp
 import datetime
@@ -29,9 +29,7 @@ def run_matching_transport_optimizer_old(input_data):
             if cost_matrix[woker][task] is not None:
                 solver.add_arc_with_cost(woker, task, int(cost_matrix[woker][task]))
 
-    logger.info("Solving the assignment model...")
-    status = solver.solve()
-    logger.info(f"Solver finished. Status: {status}, Time: {solver.WallTime():.2f} ms")
+    status, processing_time = solving_log(solver, 'transport')
 
     results = {'assignments':[], 'total_cost':0}
     error_msg = None
@@ -59,7 +57,8 @@ def run_matching_transport_optimizer_old(input_data):
     if error_msg:
         logger.error(f"Assignment optimization failed: {error_msg}")
 
-    return results, error_msg, processing_time_ms
+    return results, error_msg, processing_time
+
 
 def run_matching_transport_optimizer_new(input_data):
     """
@@ -101,8 +100,7 @@ def run_matching_transport_optimizer_new(input_data):
     solver.Minimize(solver.Sum(objective_terms))
 
     logger.info("Solving the assignment model...")
-    status = solver.Solve()
-    solved_log(solver,  status,'assignment')
+    status, processing_time = solving_log(solver, 'assignment')
 
     results = {'assignments':[], 'total_cost':0}
     error_msg = None
@@ -129,7 +127,7 @@ def run_matching_transport_optimizer_new(input_data):
     if error_msg:
         logger.error(f"Assignment optimization failed: {error_msg}")
 
-    return results, error_msg, get_solving_time_sec(solver)
+    return results, error_msg, processing_time
 
 with open('../test_data/matching_transport_data/test.json', 'r', encoding='utf-8') as f:
     input_data = json.load(f)

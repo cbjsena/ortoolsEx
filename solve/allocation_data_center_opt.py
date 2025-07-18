@@ -1,9 +1,9 @@
 import json
 from ortools.linear_solver import pywraplp  # OR-Tools MIP solver (실제로는 LP 솔버 사용)
-from logging_config import setup_logger
-import logging
 import datetime  # 파일명 생성 등에 사용 가능
 from math import floor
+from logging_config import setup_logger
+import logging
 
 setup_logger()
 logger = logging.getLogger(__name__)  # settin
@@ -44,7 +44,7 @@ def run_optimization(global_constraints, server_data, demand_data):
      # Dm[s]Sv[i]: 서비스 s를 위해 서버 i에 할당된 "자원 단위" 또는 "서비스 인스턴스 수"
     # 여기서는, 각 서비스가 특정 양의 CPU, RAM, Storage를 요구하고,
     # 각 서버이 특정 양의 CPU, RAM, Storage를 제공한다고 가정.
-    Alloc = {}
+    alloc = {}
     for i_idx in range(num_server_data):
         for s_idx in range(num_demand_data):
             service = demand_data[s_idx]
@@ -54,19 +54,19 @@ def run_optimization(global_constraints, server_data, demand_data):
             # 이 '유닛'은 해당 서비스의 요구 자원에 맞춰짐.
             # 서비스 s를 서버 i에서 몇 유닛 제공할지 (이산적인 서비스 유닛으로 가정)
             max_units_s = service.get('max_units', infinity) if service.get('max_units') is not None else infinity
-            Alloc[s_idx, i_idx] = solver.IntVar(0, max_units_s if max_units_s != infinity else solver.infinity(),
+            alloc[s_idx, i_idx] = solver.IntVar(0, max_units_s if max_units_s != infinity else solver.infinity(),
                                                f'Alloc{i_idx+1}_{s_idx+1}')
 
-    logger.solve(f"Alloc_ij: 서버 i에 할당된 서비스 j의 용량, 총 {len(Alloc)}개 생성")
+    logger.solve(f"Alloc_ij: 서버 i에 할당된 서비스 j의 용량, 총 {len(alloc)}개 생성")
     # 모든 변수를 출력하기는 너무 많을 수 있으므로, 일부만 예시로 출력하거나 요약
-    if len(Alloc) > 10:  # 변수가 많을 경우 일부만 출력
+    if len(alloc) > 10:  # 변수가 많을 경우 일부만 출력
         logger.solve(
             f"  (예시) X_s{demand_data[0].get('id', 0)}_i{server_data[0].get('id', 0)}, X_s{demand_data[0].get('id', 0)}_i{server_data[1].get('id', 1)}, ...")
     else:
-        for (s_idx, i_idx), var in Alloc.items():
+        for (s_idx, i_idx), var in alloc.items():
             logger.solve(
                 f"  - {var.name()} (서버: {server_data[i_idx].get('id', i_idx)}),서비스: {demand_data[s_idx].get('id', s_idx)},  범위: [{var.lb()}, {var.ub()}]")
-    logger.solve(f"Created {len(svr_name)} Sv variables and {len(Alloc)} Alloc variables.")
+    logger.solve(f"Created {len(svr_name)} Sv variables and {len(alloc)} Alloc variables.")
 
     # --- 제약 조건 ---
     logger.solve("**제약 조건:**")
@@ -138,11 +138,11 @@ def run_optimization(global_constraints, server_data, demand_data):
             terms.append(svr_name[i_idx])
 
             for s_idx in range(num_demand_data):
-                if (s_idx, i_idx) in Alloc:
+                if (s_idx, i_idx) in alloc:
                     service = demand_data[s_idx]
                     req_resource = service.get(f'req_{resource}', 0)
                     coeffs.append(req_resource)
-                    terms.append(Alloc[s_idx, i_idx])
+                    terms.append(alloc[s_idx, i_idx])
 
             # 모든 계수가 0이 아닌 경우에만 제약을 추가 (자원 요구사항이 없는 경우 불필요)
             if any(c != 0 for c in coeffs):
@@ -162,8 +162,8 @@ def run_optimization(global_constraints, server_data, demand_data):
             # 서비스 s에 대해 모든 서버에서 제공되는 총 유닛 수는 max_units_s를 넘을 수 없음
             constraint_demand_s = solver.Constraint(0, max_units_s, f'demand_service_{s_idx}')
             for i_idx in range(num_server_data):
-                if (s_idx, i_idx) in Alloc:
-                    constraint_demand_s.SetCoefficient(Alloc[s_idx, i_idx], 1)
+                if (s_idx, i_idx) in alloc:
+                    constraint_demand_s.SetCoefficient(alloc[s_idx, i_idx], 1)
             # logger.solve(f"service_{service.get('id', s_idx)}: sum(X_si[{service.get('id', s_idx)},i]) <= {max_units_s}")
             logger.solve(f"service_{service.get('id', s_idx)}: sum(Dm[{s_idx},i]) <= {max_units_s}")
     # --- 목표 함수 ---
@@ -177,8 +177,8 @@ def run_optimization(global_constraints, server_data, demand_data):
     for s_idx in range(num_demand_data):
         service = demand_data[s_idx]
         for i_idx in range(num_server_data):
-            if (s_idx, i_idx) in Alloc:
-                objective.SetCoefficient(Alloc[s_idx, i_idx], service.get('revenue_per_unit', 0))
+            if (s_idx, i_idx) in alloc:
+                objective.SetCoefficient(alloc[s_idx, i_idx], service.get('revenue_per_unit', 0))
 
     objective.SetMaximization()
     logger.solve(f"\n**목표 함수:** 총 이익 극대화 (서비스 수익 - 서버 구매 비용)")
@@ -193,11 +193,11 @@ def run_optimization(global_constraints, server_data, demand_data):
     for s_idx in range(num_demand_data):
         service = demand_data[s_idx]
         for i_idx in range(num_server_data):
-            if (s_idx, i_idx) in Alloc:
-                objective.SetCoefficient(Alloc[s_idx, i_idx], service.get('revenue_per_unit', 0))
+            if (s_idx, i_idx) in alloc:
+                objective.SetCoefficient(alloc[s_idx, i_idx], service.get('revenue_per_unit', 0))
                 coff = service.get('revenue_per_unit',0)
                 if coff != 0:
-                    obj_terms.append(f"{coff}*{Alloc[s_idx, i_idx].name()}")
+                    obj_terms.append(f"{coff}*{alloc[s_idx, i_idx].name()}")
     obj_expr_str = " + ".join(obj_terms)
     logger.solve(f"obj_exp: {obj_expr_str}")
     # --- 문제 해결 ---
@@ -258,8 +258,8 @@ def run_optimization(global_constraints, server_data, demand_data):
             total_units_for_service_s = 0
             allocation_details_s = []
             for i_idx in range(num_server_data):
-                if (s_idx, i_idx) in Alloc:
-                    units_on_server_i = Alloc[s_idx, i_idx].solution_value()
+                if (s_idx, i_idx) in alloc:
+                    units_on_server_i = alloc[s_idx, i_idx].solution_value()
                     if abs(units_on_server_i) < 1e-6: units_on_server_i = 0
                     units_on_server_i = int(round(units_on_server_i))
 

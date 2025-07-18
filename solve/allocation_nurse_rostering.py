@@ -60,14 +60,14 @@ def run_nurse_roster_advanced_optimizer(input_data):
             for d in range(num_days):
                 model.AddAtMostOne(assigns[(n_id, d, s)] for s in range(num_shifts_per_day))
 
-        # 제약 2: [수정] 숙련도별 필요 인원 충족
+        # 제약 2: 숙련도별 필요 인원 충족
         for d in range(num_days):
             for s_idx, s_name in enumerate(shifts):
                 for skill, required_count in skill_requirements[s_name].items():
                     nurses_with_that_skill = nurses_by_skill[skill]
                     model.Add(sum(assigns[(n_id, d, s_idx)] for n_id in nurses_with_that_skill) >= required_count)
 
-        # 제약 3: [신규] 휴가 요청 반영
+        # 제약 3: 휴가 요청 반영
         for n_id, off_days in vacation_requests.items():
             for d in off_days:
                 model.Add(sum(assigns[(n_id, d, s)] for s in range(num_shifts_per_day)) == 0)
@@ -86,22 +86,22 @@ def run_nurse_roster_advanced_optimizer(input_data):
             night_gap = max_nights - min_nights
         else:
             night_gap = 0
-
-        # 목표 2: [신규] 공평한 휴무일 분배
-        if 'fair_offs' in enabled_fairness:
-            total_shifts_worked = [
-                sum(assigns[(n_id, d, s)] for d in range(num_days) for s in range(num_shifts_per_day)) for n_id in
-                nurse_ids]
-            off_days_per_nurse = [num_days - s for s in total_shifts_worked]
-            min_offs = model.NewIntVar(0, num_days, 'min_offs')
-            max_offs = model.NewIntVar(0, num_days, 'max_offs')
-            model.AddMinEquality(min_offs, off_days_per_nurse)
-            model.AddMaxEquality(max_offs, off_days_per_nurse)
-            off_gap = max_offs - min_offs
-        else:
-            off_gap = 0
-
-        # 목표 3: [기존] 공평한 주말 근무 분배
+        #
+        # # 목표 2: [신규] 공평한 휴무일 분배
+        # if 'fair_offs' in enabled_fairness:
+        #     total_shifts_worked = [
+        #         sum(assigns[(n_id, d, s)] for d in range(num_days) for s in range(num_shifts_per_day)) for n_id in
+        #         nurse_ids]
+        #     off_days_per_nurse = [num_days - s for s in total_shifts_worked]
+        #     min_offs = model.NewIntVar(0, num_days, 'min_offs')
+        #     max_offs = model.NewIntVar(0, num_days, 'max_offs')
+        #     model.AddMinEquality(min_offs, off_days_per_nurse)
+        #     model.AddMaxEquality(max_offs, off_days_per_nurse)
+        #     off_gap = max_offs - min_offs
+        # else:
+        #     off_gap = 0
+        #
+        # # 목표 3: [기존] 공평한 주말 근무 분배
         if 'fair_weekends' in enabled_fairness:
             weekend_shifts_worked = [sum(assigns[(n_id, d, s)] for d in weekend_days for s in range(num_shifts_per_day))
                                      for n_id in nurse_ids]
@@ -116,14 +116,15 @@ def run_nurse_roster_advanced_optimizer(input_data):
 
         # --- 4. 목표 함수 설정 ---
         # 각 공정성 목표의 격차(gap) 합을 최소화
-        model.Minimize(night_gap * 2 + off_gap + weekend_gap * 3)  # 야간, 주말에 가중치 부여
+        model.Minimize(night_gap * 2 + weekend_gap)  # + off_gap  * 3야간, 주말에 가중치 부여
 
         # --- 5. 문제 해결 ---
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = 30.0
         status = solver.Solve(model)
+        status_name = solver.StatusName(status)
         processing_time = solver.WallTime()
-        logger.info(f"Solver status: {status}, Time: {processing_time} ms")
+        logger.info(f"Solver status: {status_name}, Time: {processing_time} ms")
 
         # --- 6. 결과 추출 ---
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
@@ -131,7 +132,7 @@ def run_nurse_roster_advanced_optimizer(input_data):
             for d in range(num_days):
                 schedule[d] = {}
                 for s_idx, s_name in enumerate(shifts):
-                    schedule[d][s_idx] = [n_id for n_id in nurse_ids if solver.Value(assigns[(n_id, d, s_idx)]) == 1]
+                    schedule[d][s_idx] = [nurses_data[n_id].get('name') for n_id in nurse_ids if solver.Value(assigns[(n_id, d, s_idx)]) == 1]
 
             # 각 간호사별 통계 계산
             total_shifts = [

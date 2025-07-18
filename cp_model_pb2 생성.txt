@@ -1,0 +1,31 @@
+1. protoc는 Protocol Buffers의 핵심 컴파일러입니다.
+.proto 파일을 바탕으로 다양한 언어의 소스코드(Python, C++, Java 등)를 자동 생성해주는 도구
+
+1. 공식 바이너리 다운로드
+https://github.com/protocolbuffers/protobuf/releases
+2. 시스템에 맞는 zip 파일 다운로드:
+    - Windows: protoc-*-win64.zip
+    - 최신(31.1)은 win64 없고 일반 zip에는 exe 파일 없음 -> 29.5의 Assets 펼치니 win64 존재
+3.압축 해제 후, bin/protoc 또는 protoc.exe 경로를 시스템 PATH에 추가
+
+######################
+1. GitHub에서 OR-Tools의 proto 파일을 받습니다: https://github.com/google/or-tools/blob/stable/ortools/sat/cp_model.proto
+📄 cp_model.proto (GitHub)
+
+2. cp_model.proto를 다운받아 사용합니다.
+
+3. protoc로 Python 바인딩 생성:
+    protoc --python_out=. cp_model.proto
+그러면 cp_model_pb2.py가 생성됩니다.
+
+4. Python 코드에서 다음과 같이 사용 가능
+import cp_model_pb2
+from google.protobuf import text_format
+
+with open("local_model.pb.txt", "r") as f:
+    proto_text = f.read()
+
+model_proto = cp_model_pb2.CpModelProto()
+text_format.Parse(proto_text, model_proto)
+
+print(model_proto.variables[0].name)
