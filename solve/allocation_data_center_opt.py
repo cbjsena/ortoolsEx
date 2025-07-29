@@ -1,5 +1,6 @@
 import json
 from ortools.linear_solver import pywraplp  # OR-Tools MIP solver (실제로는 LP 솔버 사용)
+from common_utils.common_run_opt import *
 import datetime  # 파일명 생성 등에 사용 가능
 from math import floor
 from logging_config import setup_logger
@@ -8,12 +9,12 @@ import logging
 setup_logger()
 logger = logging.getLogger(__name__)  # settin
 
-with open('../allocation_data_center/testcase/test2.json', 'r', encoding='utf-8') as f:
+with open('../test_data/allocation_datacenter_data/test2.json', 'r', encoding='utf-8') as f:
     test_data = json.load(f)
 # test_data = json.loads("testcase/matcing_cf_tft_test1.json")
 global_constraints = test_data.get('global_constraints')
-server_data = test_data.get('server_types')
-demands_data =test_data.get('service_demands')
+server_data = test_data.get('server_data')
+demands_data =test_data.get('demand_data')
 
 def run_optimization(global_constraints, server_data, demand_data):
     logger.info("Running Data Center Capacity Optimizer...")
@@ -38,7 +39,7 @@ def run_optimization(global_constraints, server_data, demand_data):
     svr_name = [solver.IntVar(0, infinity, f'Sv{i+1}') for i in range(num_server_data)]
     logger.solve(f"SV: 서버 i의 구매 개수, 총 {len(svr_name)}개 생성")
     for i, var in enumerate(svr_name):
-        ub = floor(min(total_power/server_data[i].get('power_kva'),total_space/server_data[i].get('space_sqm')))
+        ub = floor(min(total_power/float(server_data[i].get('power_kva')),total_space/float(server_data[i].get('space_sqm'))))
         logger.solve(f"  - {var.name()} (서버: {server_data[i].get('id', i)}), 범위: [{var.lb()}, {ub}]")
 
      # Dm[s]Sv[i]: 서비스 s를 위해 서버 i에 할당된 "자원 단위" 또는 "서비스 인스턴스 수"
@@ -203,6 +204,7 @@ def run_optimization(global_constraints, server_data, demand_data):
     # --- 문제 해결 ---
     logger.info("Solving Data Center Capacity model...")
     solve_start_time = datetime.datetime.now()
+    export_ortools_solver(solver, 'datacenter.mps')
     status = solver.Solve()
     solve_end_time = datetime.datetime.now()
     processing_time_ms = (solve_end_time - solve_start_time).total_seconds() * 1000

@@ -166,7 +166,7 @@ def run_nurse_roster_advanced_optimizer(input_data):
     except Exception as e:
         return None, f"오류 발생: {str(e)}", None
 
-with open('../test_data/allocation_nurse_data/test.json', 'r', encoding='utf-8') as f:
+with open('../test_data/allocation_nurse_data/test1.json', 'r', encoding='utf-8') as f:
     input_data = json.load(f)
 
 results_data, error_msg_opt, processing_time_ms = run_nurse_roster_advanced_optimizer(input_data)
