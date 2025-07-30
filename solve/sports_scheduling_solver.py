@@ -596,7 +596,7 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
         self.home_city_of_team = {idx: self.original_team_to_idx.get(self.teams[idx], -1) for idx in range(self.num_teams)}
 
     def _create_location_variables(self):
-        self.is_at_loc = self.model.addVars(self.num_teams_original, self.num_slots, self.num_cities, vtype=GRB.BINARY,name="is_at_loc")
+        self.is_at_loc = self.model.addVars(self.num_teams, self.num_slots, self.num_cities, vtype=GRB.BINARY,name="is_at_loc")
 
     def _create_variables(self):
         super()._create_plays_variables()
@@ -606,8 +606,10 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
         # 위치 제약 추가
         for s in range(self.num_slots):
             for t in range(self.num_teams_original):
+                # 팀 t가 홈 경기 시, 위치는 자신의 홈
                 is_home = quicksum(self.plays[s, t, a] for a in range(self.num_teams) if t != a)
                 self.model.addConstr(self.is_at_loc[t, s, self.home_city_of_team[t]] >= is_home)
+                # 팀 t가 원정 경기 시, 위치는 상대팀 h의 홈
                 for h in range(self.num_teams_original):
                     if t != h:
                         self.model.addConstr(self.is_at_loc[t, s, self.home_city_of_team[h]] >= self.plays[s, h, t])
@@ -616,7 +618,7 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
 
     def _add_constraints(self):
         super()._add_common_constraints()
-        self._create_location_variables()
+        self._add_location_constraints()
 
     def _set_objective_function(self):
         logger.solve("--- 3. Setting Objective for Gurobi Complex Solver ---")
@@ -625,19 +627,28 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
         # 동적 이동 거리 계산
         for t in range(self.num_teams_original):
             slot_travel_dist = []
+            # [NEW] s=0: introduce binary variables for initial location
             initial_loc_vars = self.model.addVars(self.num_cities, vtype=GRB.BINARY, name=f"init_loc_{t}")
             for l in range(self.num_cities):
-                self.model.addConstr(initial_loc_vars[l] == (1 if l == self.home_city_of_team[t] else 0))
-
+                if l == self.home_city_of_team[t]:
+                    self.model.addConstr(initial_loc_vars[l] == 1)
+                else:
+                    self.model.addConstr(initial_loc_vars[l] == 0)
             for s in range(self.num_slots):
-                prev_loc_vars = [initial_loc_vars[l] for l in range(self.num_cities)] if s == 0 else [
-                    self.is_at_loc[t, s - 1, l] for l in range(self.num_cities)]
+                if s == 0:
+                    prev_loc_vars = [initial_loc_vars[l] for l in range(self.num_cities)]
+                else:
+                    prev_loc_vars = [self.is_at_loc[t, s - 1, l] for l in range(self.num_cities)]
                 curr_loc_vars = [self.is_at_loc[t, s, l] for l in range(self.num_cities)]
 
+                # dist_in_slot[s] = sum over l1,l2 ( prev_loc_vars[l1] * curr_loc_vars[l2] * distance[l1][l2] )
+                # 위 식은 변수 간의 곱이므로 선형이 아님. 선형화 필요.
+                # Gurobi에서는 and_ 제약으로 선형화 가능
                 travel_arc_vars = self.model.addVars(self.num_cities, self.num_cities, vtype=GRB.BINARY,
                                                      name=f"travel_{t}_{s}")
                 for l1 in range(self.num_cities):
                     for l2 in range(self.num_cities):
+                        # Z = X AND Y
                         self.model.addGenConstrAnd(travel_arc_vars[l1, l2], [prev_loc_vars[l1], curr_loc_vars[l2]])
 
                 dist_for_slot = quicksum(
@@ -654,24 +665,31 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
             self.breaks = self.model.addVars(self.num_teams_original, self.num_slots - 1, vtype=GRB.BINARY, name="breaks")
             for t in range(self.num_teams_original):
                 for s in range(self.num_slots - 1):
+                    # is_home_s: 팀 t가 시간 s에 홈이면 1
                     is_home_s = quicksum(self.plays[s, t, a] for a in range(self.num_teams) if t != a)
+                    # is_home_s_plus_1: 팀 t가 시간 s+1에 홈이면 1
                     is_home_s_plus_1 = quicksum(self.plays[s + 1, t, a] for a in range(self.num_teams) if t != a)
-                    diff = self.model.addVar(lb=-1, ub=1, vtype=GRB.INTEGER)
+
+                    # diff = is_home_s - is_home_s_plus_1 (값은 -1, 0, 1)
+                    diff = self.model.addVar(lb=-1, ub=1, vtype=GRB.INTEGER, name=f"diff_{t}_{s}")
                     self.model.addConstr(diff == is_home_s - is_home_s_plus_1)
+
+                    # abs_diff = |diff|. abs_diff는 0 또는 1 (break가 없으면 1, 있으면 0)
                     abs_diff = self.model.addVar(vtype=GRB.BINARY)
                     self.model.addGenConstrAbs(abs_diff, diff)
+
+                    # breaks[t,s]는 abs_diff의 반대. breaks = 1 - abs_diff
                     self.model.addConstr(self.breaks[t, s] == 1 - abs_diff)
 
             total_breaks = quicksum(self.breaks.values())
             total_travel = quicksum(self.team_travel_vars)
-            self.model.setObjective(total_breaks * 100 + total_travel, GRB.MINIMIZE)
+            self.model.setObjective(total_breaks * self.break_penalty_weight + total_travel, GRB.MINIMIZE)
         elif self.objective_choice == 'distance_gap':
             min_travel = self.model.addVar(vtype=GRB.INTEGER, name="min_travel")
             max_travel = self.model.addVar(vtype=GRB.INTEGER, name="max_travel")
             self.model.addGenConstrMin(min_travel, self.team_travel_vars)
             self.model.addGenConstrMax(max_travel, self.team_travel_vars)
             self.model.setObjective(max_travel - min_travel, GRB.MINIMIZE)
-
 
     def _extract_results(self):
         logger.info("Extracting results for Gurobi Complex Solver...")
@@ -716,7 +734,7 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
 
 
 
-with open('../test_data/puzzles_sports_scheduling_data/test.json', 'r', encoding='utf-8') as f:
+with open('../test_data/puzzles_sports_scheduling_data/gap_gurobi_team4.json', 'r', encoding='utf-8') as f:
     input_data = json.load(f)
 
 solver_instance = SportsSolverFactory(input_data)
