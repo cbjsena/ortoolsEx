@@ -1,8 +1,8 @@
-from common_run_opt import get_solving_time_sec
 from gurobipy import Model, GRB, quicksum
 from ortools.sat.python import cp_model
 import datetime
 import json
+from common_utils.common_run_opt import export_cp_model
 from logging_config import setup_logger
 import logging
 import settings
@@ -469,7 +469,8 @@ def run_sports_scheduling_optimizer_ortools2(input_data):
             # Gurobi: model.setObjective(max_travel - min_travel, GRB.MINIMIZE)
             model.Minimize(max_travel - min_travel)
             logger.debug("Objective set to: Minimize distance gap.")
-
+        problem_type =input_data.get('problem_type')
+        export_cp_model(model, f'{problem_type}.mps')
         # --- 5. 문제 해결 ---
         solver = cp_model.CpSolver()
         # Gurobi: model.setParam('TimeLimit', ...)
@@ -933,7 +934,7 @@ if test_type ==1:
                 f"distance_gap: {results_data['distance_gap']}, "
                 f"total_breaks: {results_data['total_breaks']}")
 elif test_type == 2:
-    with open('../test_data/puzzles_sports_scheduling_data/fairness_single_team4.json', 'r', encoding='utf-8') as f:
+    with open('../test_data/puzzles_sports_scheduling_data/test.json', 'r', encoding='utf-8') as f:
         input_data = json.load(f) #fairness_single_team4 minimize_travel_single_team4
     results_data, error_msg_opt, processing_time_ms = run_sports_scheduling_optimizer_ortools2(input_data)
     logger.info(f"total_distance:{results_data['total_distance']} "

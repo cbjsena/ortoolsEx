@@ -74,6 +74,8 @@ class BaseOrtoolsCpSolver(BaseSolver):
     def __init__(self, input_data):
         super().__init__(input_data)
         self.model = cp_model.CpModel()
+        if not hasattr(self.model, 'named_constraints'):
+            self.model.named_constraints = {}
         # CP-SAT에서는 solver 객체를 solve 직전에 생성합니다.
 
     def _extract_results(self, solver):
@@ -89,7 +91,7 @@ class BaseOrtoolsCpSolver(BaseSolver):
 
             solver = cp_model.CpSolver()
             # solver.parameters.max_time_in_seconds = 30.0 # 필요시 시간 제한 설정
-            export_cp_model(self.model, f'{self.problem_type}.mps')
+            export_cp_model(self.model, f'ortools_{self.problem_type}.mps')
             status = solver.Solve(self.model)
             processing_time = self.get_time(solver.WallTime())
             self.log_solve_resulte(solver.StatusName(status), processing_time)
@@ -107,7 +109,7 @@ class BaseOrtoolsCpSolver(BaseSolver):
                 return None, error_msg, processing_time
 
         except Exception as e:
-            return super().solve()
+            return None, e, None
 
 
 class BaseOrtoolsRoutingSolver(BaseSolver):

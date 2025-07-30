@@ -32,11 +32,12 @@ class ColoredFormatter(logging.Formatter):
 # 포맷 설정
 debug_format = '[%(asctime)s] [%(levelname)s] %(name)s: %(message)s'
 info_format  = '[%(asctime)s] [%(levelname)s] %(message)s'
+solve_format = '[%(levelname)s] %(message)s'
 
 debug_formatter = ColoredFormatter(debug_format, datefmt='%Y-%m-%d %H:%M:%S')
 info_formatter  = ColoredFormatter(info_format,  datefmt='%Y-%m-%d %H:%M:%S')
 plain_formatter = logging.Formatter(debug_format, datefmt='%Y-%m-%d %H:%M:%S')
-solve_formatter = ColoredFormatter(info_format, datefmt='%Y-%m-%d %H:%M:%S')
+solve_formatter_no_time = ColoredFormatter(solve_format)
 
 # DEBUG 전용 필터
 class LevelFilter(logging.Filter):
@@ -70,9 +71,10 @@ def setup_logger():
     debug_handler.setFormatter(debug_formatter)
     logger.addHandler(debug_handler)
 
+    # SOLVE 전용 핸들러 (시간 제외)
     solve_handler = logging.StreamHandler()
     solve_handler.setLevel(SOLVE_LOG_LEVEL)
     solve_handler.addFilter(LevelFilter(SOLVE_LOG_LEVEL))
-    solve_handler.setFormatter(info_formatter)
+    solve_handler.setFormatter(solve_formatter_no_time)
     logger.addHandler(solve_handler)
 
