@@ -14,7 +14,7 @@ def main():
     num_tasks = len(costs[0])
 
     # Solver
-    # Create the mip solver with the SCIP backend.
+    # Create the mip solve with the SCIP backend.
     solver = pywraplp.Solver.CreateSolver("SCIP")
 
     if not solver:

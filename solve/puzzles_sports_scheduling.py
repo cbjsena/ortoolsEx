@@ -203,7 +203,7 @@ def run_sports_scheduling_optimizer_ortools1(input_data):
         results['schedule'] = schedule
 
         # for key, var in plays.items():
-        #     if solver.Value(var) == 1:
+        #     if solve.Value(var) == 1:
         #         logger.solve(var.Name())
 
         # 결과 지표 계산

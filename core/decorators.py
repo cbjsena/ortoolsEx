@@ -115,7 +115,7 @@ def log_solver_make(func):
         # input_data에서 problem_type 추출 시도
         problem_type = getattr(instance, 'problem_type', 'Unknown')
 
-        logger.solve(f"Starting [{func_name}] in solver for '{problem_type}'...")
+        logger.solve(f"Starting [{func_name}] in solve for '{problem_type}'...")
         start_time = time.time()
 
         try:
@@ -123,12 +123,12 @@ def log_solver_make(func):
             func(*args, **kwargs)  # 처리 시간은 데코레이터가 계산
             end_time = time.time()
             processing_time = round(end_time - start_time, 4)
-            logger.solve(f"Ended [{func_name}] in solver for '{problem_type}', Time: {processing_time} sec")
+            logger.solve(f"Ended [{func_name}] in solve for '{problem_type}', Time: {processing_time} sec")
         except Exception as e:
             end_time = time.time()
             processing_time = round(end_time - start_time, 4)
             logger.error(
-                f"[{func_name}] An unexpected error occurred in solver for '{problem_type}': {e}. Time: {processing_time} sec",
+                f"[{func_name}] An unexpected error occurred in solve for '{problem_type}': {e}. Time: {processing_time} sec",
                 exc_info=True)
 
     return wrapper
@@ -149,15 +149,12 @@ def log_solver_solve(func):
         # input_data에서 problem_type 추출 시도
         problem_type = getattr(instance, 'problem_type', 'Unknown')
 
-        logger.info(f"[{func_name}] Starting solver for '{problem_type}'...")
+        logger.info(f"[{func_name}] Starting solve for '{problem_type}'...")
         start_time = time.time()
 
         try:
             # 원래의 솔버 함수 실행
-            results, error_msg, _ = func(*args, **kwargs)  # 처리 시간은 데코레이터가 계산
-
-            end_time = time.time()
-            processing_time = round(end_time - start_time, 4)
+            results, error_msg, processing_time = func(*args, **kwargs)  # 처리 시간은 데코레이터가 계산
 
             if error_msg:
                 logger.warning(
@@ -172,7 +169,7 @@ def log_solver_solve(func):
             end_time = time.time()
             processing_time = round(end_time - start_time, 4)
             logger.error(
-                f"[{func_name}] An unexpected error occurred in solver for '{problem_type}': {e}. Time: {processing_time} sec",
+                f"[{func_name}] An unexpected error occurred in solve for '{problem_type}': {e}. Time: {processing_time} sec",
                 exc_info=True)
             # 뷰로 전달할 에러 메시지와 함께 예외를 다시 발생시키거나, 튜플을 반환할 수 있음
             return None, f"솔버 실행 중 오류 발생: {str(e)}", processing_time

@@ -1,7 +1,7 @@
 # OptDemo/matching_app/views.py
 
 import json
-from ortools.linear_solver import pywraplp  # OR-Tools MIP solver
+from ortools.linear_solver import pywraplp  # OR-Tools MIP solve
 from logging_config import setup_logger
 import logging
 
@@ -79,7 +79,7 @@ def run_optimization(cf_panels, tft_panels):
 
     # --- 2. OR-Tools MIP 모델 구성 ---
     # SCIP, CBC, GLPK, Gurobi 등 다양한 솔버 사용 가능 (설치 필요)
-    # Create the mip solver with the SCIP backend.
+    # Create the mip solve with the SCIP backend.
     try:
         solver = pywraplp.Solver.CreateSolver('SCIP')
         if not solver:

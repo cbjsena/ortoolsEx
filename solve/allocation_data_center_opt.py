@@ -1,5 +1,5 @@
 import json
-from ortools.linear_solver import pywraplp  # OR-Tools MIP solver (실제로는 LP 솔버 사용)
+from ortools.linear_solver import pywraplp  # OR-Tools MIP solve (실제로는 LP 솔버 사용)
 from common_utils.common_run_opt import *
 import datetime  # 파일명 생성 등에 사용 가능
 from math import floor
@@ -121,7 +121,7 @@ def run_optimization(global_constraints, server_data, demand_data):
             # # Ns[i_idx] * server.get(resource, 0)
             # # 서버 i에 할당된 모든 서비스 유닛들이 소모하는 총 자원량
             # # sum (X_si[s_idx, i_idx] * demands_data[s_idx].get(f'req_{resource}', 0) for s_idx in range(num_services))
-            # constraint_res = solver.Constraint(-infinity, 0, f'res_{resource}server{i_idx}')
+            # constraint_res = solve.Constraint(-infinity, 0, f'res_{resource}server{i_idx}')
             # # 제공량 (우변으로 넘기면 <= 0)
             # constraint_res.SetCoefficient(Ns[i_idx], -server.get(resource, 0))  # 제공량은 음수로
             # # 소비량 (좌변에 그대로)
@@ -298,7 +298,7 @@ def run_optimization(global_constraints, server_data, demand_data):
             pywraplp.Solver.NOT_SOLVED: "솔버가 문제를 풀지 못했습니다."
         }
         error_msg = solver_status_map.get(status, f"최적해를 찾지 못했습니다. (솔버 상태 코드: {status})")
-        logger.error(f"Data center capacity solver failed. Status: {status}. Message: {error_msg}")
+        logger.error(f"Data center capacity solve failed. Status: {status}. Message: {error_msg}")
 
     return results, error_msg, processing_time_ms
 

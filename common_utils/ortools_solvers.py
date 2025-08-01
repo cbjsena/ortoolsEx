@@ -76,10 +76,10 @@ class BaseOrtoolsCpSolver(BaseSolver):
         self.model = cp_model.CpModel()
         if not hasattr(self.model, 'named_constraints'):
             self.model.named_constraints = {}
-        # CP-SAT에서는 solver 객체를 solve 직전에 생성합니다.
+        # CP-SAT에서는 solve 객체를 solve 직전에 생성합니다.
 
     def _extract_results(self, solver):
-        # CP-SAT의 결과 추출은 solver 객체가 필요하므로, 인자를 받도록 재정의합니다.
+        # CP-SAT의 결과 추출은 solve 객체가 필요하므로, 인자를 받도록 재정의합니다.
         raise NotImplementedError
 
     @log_solver_solve
@@ -90,7 +90,7 @@ class BaseOrtoolsCpSolver(BaseSolver):
             self._set_objective_function()
 
             solver = cp_model.CpSolver()
-            # solver.parameters.max_time_in_seconds = 30.0 # 필요시 시간 제한 설정
+            # solve.parameters.max_time_in_seconds = 30.0 # 필요시 시간 제한 설정
             export_cp_model(self.model, f'ortools_{self.problem_type}.mps')
             status = solver.Solve(self.model)
             processing_time = self.get_time(solver.WallTime())
@@ -101,7 +101,7 @@ class BaseOrtoolsCpSolver(BaseSolver):
                     msg = "Feasible solution found, but it might not be optimal."
                     logger.warning(msg)
 
-                results = self._extract_results(solver)  # solver 객체를 전달
+                results = self._extract_results(solver)  # solve 객체를 전달
                 error_msg = None
                 return results, error_msg, processing_time
             else:

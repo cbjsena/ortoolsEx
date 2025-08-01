@@ -61,6 +61,7 @@ class BaseSportsSchedulingSolver:
         self.max_consecutive = input_data.get('max_consecutive', 3)
         self.num_teams_original = len(self.teams_original)
         self.teams = list(self.teams_original)
+        self.city_list = input_data.get('city_list', [])
         self.has_bye = False
 
         if self.num_teams_original % 2 != 0:
@@ -77,6 +78,8 @@ class BaseSportsSchedulingSolver:
 
         self.num_cities = len(self.distance_matrix)
         self.break_penalty_weight = 1000
+        self.original_team_to_idx = {name: idx for idx, name in enumerate(self.teams_original)}
+        self.home_city_of_team = {idx: self.original_team_to_idx.get(self.teams[idx], -1) for idx in range(self.num_teams)}
 
 class BaseOrtoolsSportsSolver(BaseSportsSchedulingSolver, BaseOrtoolsCpSolver):
     """OR-Tools CP-SAT 솔버를 위한 공통 로직을 포함하는 기본 클래스."""
@@ -87,6 +90,7 @@ class BaseOrtoolsSportsSolver(BaseSportsSchedulingSolver, BaseOrtoolsCpSolver):
         self.plays = {}
         self.team_travel_vars = []
         self.break_vars = []
+        self.max_dist = sum(self.distance_matrix[0]) * self.num_slots  # 최대 이동 거리 계산
 
     @log_solver_make
     def _create_plays_variables(self):
@@ -137,7 +141,7 @@ class BaseOrtoolsSportsSolver(BaseSportsSchedulingSolver, BaseOrtoolsCpSolver):
         """제약: 최대 연속 홈/원정 경기 수를 제한합니다."""
         for t in range(self.num_teams_original):
             for s in range(self.num_slots - self.max_consecutive):
-                away_window = [self.plays.get((idx, h, t))
+                away_window = [self.plays.get((idx, h, t),0)
                                for idx in range(s, s + self.max_consecutive + 1)
                                for h in range(self.num_teams) if t != h]
                 constraint = self.model.Add(sum(away_window) <= self.max_consecutive)
@@ -146,7 +150,7 @@ class BaseOrtoolsSportsSolver(BaseSportsSchedulingSolver, BaseOrtoolsCpSolver):
                 logger.solve(
                     f"{constraint_name}: {' + '.join(v.Name() for v in away_window)} <= {self.max_consecutive}")
 
-                home_window = [self.plays.get((idx, t, a))
+                home_window = [self.plays.get((idx, t, a),0)
                                for idx in range(s, s + self.max_consecutive + 1)
                                for a in range(self.num_teams) if t != a]
                 constraint = self.model.Add(sum(home_window) <= self.max_consecutive)
@@ -155,12 +159,43 @@ class BaseOrtoolsSportsSolver(BaseSportsSchedulingSolver, BaseOrtoolsCpSolver):
                 logger.solve(
                     f"{constraint_name}: {' + '.join(v.Name() for v in home_window)} <= {self.max_consecutive}")
 
-    @log_solver_make
     def _add_common_constraints(self):
         """ 모든 공통 제약 함수를 호출하는 메인 함수입니다."""
         self._add_one_game_per_slot_constraint()
         self._add_league_format_constraint()
         self._add_max_consecutive_games_constraint()
+
+    def _define_simple_total_distance(self):
+        # 총 이동 거리 (Total Distance)
+        self.team_travel_vars = [self.model.NewIntVar(0, self.max_dist, f'travel_{t}') for t in
+                                 range(self.num_teams_original)]
+        for t in range(self.num_teams_original):
+            terms = [self.distance_matrix[t][opp] * self.plays.get((s, opp, t), 0)
+                     for s in range(self.num_slots) for opp in range(self.num_teams_original) if t != opp]
+            self.model.Add(self.team_travel_vars[t] == sum(terms))
+        return sum(self.team_travel_vars)
+
+    def _define_simple_total_breaks(self):
+        # 총 연속 경기 수 (Total Breaks)
+        for t in range(self.num_teams_original):
+            for s in range(self.num_slots - 1):
+                is_home_s = sum(self.plays.get((s, t, a), 0) for a in range(self.num_teams) if t != a)
+                is_home_s_plus_1 = sum(self.plays.get((s + 1, t, a), 0) for a in range(self.num_teams) if t != a)
+
+                # is_home_s == is_home_s_plus_1 이면 break_var = 1
+                break_var = self.model.NewBoolVar(f'break_{t}_{s}')
+                self.model.Add(is_home_s == is_home_s_plus_1).OnlyEnforceIf(break_var)
+                self.model.Add(is_home_s != is_home_s_plus_1).OnlyEnforceIf(break_var.Not())
+                self.break_vars.append(break_var)
+        return sum(self.break_vars)
+
+    def _define_simple_distance_gap(self):
+        # 이동 거리 격차 (Distance Gap)
+        min_travel = self.model.NewIntVar(0, self.max_dist, 'min_travel')
+        max_travel = self.model.NewIntVar(0, self.max_dist, 'max_travel')
+        self.model.AddMinEquality(min_travel, self.team_travel_vars)
+        self.model.AddMaxEquality(max_travel, self.team_travel_vars)
+        return max_travel - min_travel
 
 class OrtoolsSimpleSolver(BaseOrtoolsSportsSolver):
     """6개 팀 이상을 위한 간단한 OR-Tools 모델."""
@@ -172,62 +207,20 @@ class OrtoolsSimpleSolver(BaseOrtoolsSportsSolver):
         super()._add_common_constraints()
 
     def _set_objective_function(self):
-        self.team_travel_vars = [self.model.NewIntVar(0, 10000000, f'travel_{idx}') for idx in range(self.num_teams_original)]
-        for t_idx in range(self.num_teams_original):
-            travel_dist_terms = []
-            for s in range(self.num_slots):
-                for opponent_idx in range(self.num_teams_original):
-                    if t_idx != opponent_idx:
-                        # 단순화된 거리 계산: 원정 경기 시, 자신의 홈에서 상대방 홈으로 이동
-                        travel_dist_terms.append(
-                            self.distance_matrix[t_idx][opponent_idx] * self.plays.get((s, opponent_idx, t_idx)))
-            self.model.Add(self.team_travel_vars[t_idx] == sum(travel_dist_terms))
-
         # --- 3. 목표 함수 설정 ---
+        # --- 가중치를 이용한 다중 목표 함수 설정 ---
+        # 가중치: 하위 목표의 최대값이 상위 목표의 1단위를 넘지 않도록 설정
+        total_travel = self._define_simple_total_distance()
+        total_breaks = self._define_simple_total_breaks()
+        distance_gap = self._define_simple_distance_gap()
+        PRIMARY_WEIGHT = 10000
+
         if self.objective_choice == 'minimize_travel':
-            self.model.Minimize(sum(self.team_travel_vars))
-            logger.solve("Objective set to: Minimize Total Travel Distance.")
+            self.model.Minimize(total_travel + total_breaks)
         elif self.objective_choice == 'fairness':
-            # --- 연속 홈/원정 경기 break 변수 추가 ---
-            break_vars = []
-            for t_idx in range(self.num_teams_original):
-                for s in range(self.num_slots - 1):
-                    is_home_s = self.model.NewBoolVar(f'is_home_t{t_idx}_s{s}')
-                    is_home_s_plus_1 = self.model.NewBoolVar(f'is_home_t{t_idx}_s{s + 1}')
-                    break_var = self.model.NewBoolVar(f'break_t{t_idx}_s{s}')
-
-                    # Reification: is_home 변수를 실제 경기 여부와 연결
-                    self.model.Add(sum(self.plays.get((s, t_idx, a)) for a in range(self.num_teams) if t_idx != a) == 1).OnlyEnforceIf(
-                        is_home_s)
-                    self.model.Add(sum(self.plays.get((s, t_idx, a)) for a in range(self.num_teams) if t_idx != a) == 0).OnlyEnforceIf(
-                        is_home_s.Not())
-
-                    self.model.Add(
-                        sum(self.plays.get((s + 1, t_idx, a)) for a in range(self.num_teams) if t_idx != a) == 1).OnlyEnforceIf(
-                        is_home_s_plus_1)
-                    self.model.Add(
-                        sum(self.plays.get((s + 1, t_idx, a)) for a in range(self.num_teams) if t_idx != a) == 0).OnlyEnforceIf(
-                        is_home_s_plus_1.Not())
-
-                    # Reification: break_var는 두 시점의 홈 여부가 같을 때 1이 됨
-                    self.model.Add(is_home_s == is_home_s_plus_1).OnlyEnforceIf(break_var)
-                    self.model.Add(is_home_s != is_home_s_plus_1).OnlyEnforceIf(break_var.Not())
-                    break_vars.append(break_var)
-
-            total_breaks = sum(break_vars)
-            total_travel = sum(self.team_travel_vars)
-            self.model.Minimize(total_breaks * self.break_penalty_weight + total_travel)
-            logger.solve("Objective set to: Minimize total number of breaks.")
+            self.model.Minimize(total_breaks * PRIMARY_WEIGHT + total_travel)
         elif self.objective_choice == 'distance_gap':
-            min_travel = self.model.NewIntVar(0, 10000000, 'min_travel')
-            max_travel = self.model.NewIntVar(0, 10000000, 'max_travel')
-            self.model.AddMinEquality(min_travel, self.team_travel_vars)
-            self.model.AddMaxEquality(max_travel, self.team_travel_vars)
-            self.model.Minimize(max_travel - min_travel)
-            logger.solve("Objective set to: Minimize gap in travel distance (Distance Gap).")
-        else:
-            # 기본 목표: 특별한 목표 없음 (실행 가능한 해 찾기)
-            logger.solve("Objective set to: Find a feasible solution.")
+            self.model.Minimize(distance_gap * PRIMARY_WEIGHT + total_travel)
 
     def _extract_results(self, solver):
         results = {'schedule': [], 'has_bye': self.has_bye, 'total_distance': 'N/A', 'team_distances': []}
@@ -274,9 +267,6 @@ class OrtoolsComplexSolver(BaseOrtoolsSportsSolver):
     def __init__(self, input_data):
         super().__init__(input_data)
         self.is_at_loc = {}
-
-        self.original_team_to_idx = {name: idx for idx, name in enumerate(self.teams_original)}
-        self.home_city_of_team = {idx: self.original_team_to_idx.get(self.teams[idx], -1) for idx in range(self.num_teams)}
 
     def _create_location_variables(self):
         for t in range(self.num_teams_original):
@@ -459,6 +449,7 @@ class OrtoolsComplexSolver(BaseOrtoolsSportsSolver):
 
         return results
 
+
 class BaseGurobiSportsSolver(BaseSportsSchedulingSolver, BaseGurobiSolver):
     """Gurobi 솔버를 위한 공통 로직을 포함하는 기본 클래스."""
 
@@ -470,41 +461,101 @@ class BaseGurobiSportsSolver(BaseSportsSchedulingSolver, BaseGurobiSolver):
         self.team_travel_vars = []
 
     def _create_plays_variables(self):
-        self.plays = self.model.addVars(self.num_slots, self.num_teams, self.num_teams, vtype=GRB.BINARY, name="plays")
-        for s in range(self.num_slots):
-            for t in range(self.num_teams):
-                self.plays[s, t, t].UB = 0
+        try:
+            for s in range(self.num_slots):
+                for h in range(self.num_teams):
+                    for a in range(self.num_teams):
+                        if h == a:
+                            continue  # 같은 팀 간의 경기는 변수를 생성하지 않음
+                        var_name = f"Plays_{s + 1}_{self.teams[h]}_{self.teams[a]}"
+                        self.plays[s, h, a] = self.model.addVar(vtype=GRB.BINARY, name=var_name)
+
+            if self.analysis_mode:
+                self.model.update() # Gurobi 모델의 내부 상태를 동기화하여 'VarName' 속성 접근 오류를 방지
+                for (s, h, a), var in self.plays.items():
+                    if h == a: continue
+                    related_info = {
+                        'slot': s + 1,
+                        'home_team': self.teams[h],
+                        'away_team': self.teams[a]
+                    }
+                    self.analyzer.add_variable(var, 'Plays', **related_info)
+        except Exception as e:
+            logger.error(f"Error creating plays variables: {e}")
+            raise
+
+    def _add_one_game_per_slot_constraint(self):
+        """제약: 각 팀은 각 슬롯에서 정확히 한 경기만 수행합니다."""
+        try:
+            for s in range(self.num_slots):
+                for t in range(self.num_teams):
+                    eq_name = f"PlayOnce_{s + 1}_{self.teams[t]}"
+                    eq = self.model.addConstr(
+                        quicksum(self.plays[s, t, a] for a in range(self.num_teams) if t != a) +
+                        quicksum(self.plays[s, h, t] for h in range(self.num_teams) if t != h) == 1,
+                        name=eq_name
+                    )
+
+                    if self.analysis_mode:
+                        self.analyzer.add_constraint(self.model, eq, 'PlayOnce', slot=s + 1, team=self.teams[t])
+        except Exception as e:
+            logger.error(f"Error adding one game per slot constraint: {e}")
+            raise
+
+    def _add_league_format_constraint(self):
+        """제약: 리그 방식(single/double)에 따른 총 경기 수를 설정합니다."""
+        try:
+            if self.schedule_type == 'single':
+                for h in range(self.num_teams):
+                    for a in range(h + 1, self.num_teams):
+                        eq_name = f"Single_{self.teams[h]}_{self.teams[a]}"
+                        eq = self.model.addConstr(
+                            quicksum(self.plays[s, h, a] + self.plays[s, a, h] for s in range(self.num_slots)) == 1,
+                            name=eq_name)
+                        if self.analysis_mode:
+                            self.analyzer.add_constraint(self.model, eq, 'Single', home_team=self.teams[h],
+                                                         away_team=self.teams[a])
+            else:  # double
+                for h in range(self.num_teams):
+                    for a in range(self.num_teams):
+                        if h != a:
+                            eq_name = f"Double_{self.teams[h]}_{self.teams[a]}"
+                            eq = self.model.addConstr(quicksum(self.plays[s, h, a] for s in range(self.num_slots)) == 1,
+                                                      name=eq_name)
+                            if self.analysis_mode:
+                                self.analyzer.add_constraint(self.model, eq, 'Double', home_team=self.teams[h],
+                                                             away_team=self.teams[a])
+        except Exception as e:
+            logger.error(f"Error adding league format constraint: {e}")
+            raise
+
+    def _add_max_consecutive_games_constraint(self):
+        """제약: 최대 연속 홈/원정 경기 수를 제한합니다."""
+        try:
+            for t in range(self.num_teams_original):
+                for s in range(self.num_slots - self.max_consecutive):
+                    eq_name = f"Consecutive_home_{self.teams[t]}_{s + 1}"
+                    eq = self.model.addConstr(quicksum(
+                        self.plays[i, t, a] for i in range(s, s + self.max_consecutive + 1) for a in range(self.num_teams)
+                        if t != a) <= self.max_consecutive, name =eq_name)
+                    if self.analysis_mode:
+                        self.analyzer.add_constraint(self.model, eq, 'Consecutive_home', team=self.teams_original[t],start_slot=s + 1)
+
+                    eq_name = f"Consecutive_away_{self.teams[t]}_{s + 1}"
+                    eq = self.model.addConstr(quicksum(
+                        self.plays[i, h, t] for i in range(s, s + self.max_consecutive + 1) for h in range(self.num_teams)
+                        if t != h) <= self.max_consecutive, name = eq_name)
+                    if self.analysis_mode:
+                        self.analyzer.add_constraint(self.model, eq, 'Consecutive_away', team=self.teams_original[t], start_slot=s + 1)
+        except Exception as e:
+            logger.error(f"Error adding max consecutive games constraint: {e}")
+            raise
 
     def _add_common_constraints(self):
-        # 각 팀은 각 슬롯에서 정확히 한 경기만
-        for s in range(self.num_slots):
-            for t in range(self.num_teams):
-                self.model.addConstr(
-                    quicksum(self.plays[s, t, a] for a in range(self.num_teams) if t != a) +
-                    quicksum(self.plays[s, h, t] for h in range(self.num_teams) if t != h) == 1,
-                    name=f"PlayOnce_s{s + 1}_t{t + 1}"
-                )
+        self._add_one_game_per_slot_constraint()
+        self._add_league_format_constraint()
+        self._add_max_consecutive_games_constraint()
 
-        # 리그 방식
-        if self.schedule_type == 'single':
-            for h in range(self.num_teams):
-                for a in range(h + 1, self.num_teams):
-                    self.model.addConstr(
-                        quicksum(self.plays[s, h, a] + self.plays[s, a, h] for s in range(self.num_slots)) == 1)
-        else:  # double
-            for h in range(self.num_teams):
-                for a in range(self.num_teams):
-                    if h != a:
-                        self.model.addConstr(quicksum(self.plays[s, h, a] for s in range(self.num_slots)) == 1)
-        # 최대 연속 경기
-        for t in range(self.num_teams_original):
-            for s in range(self.num_slots - self.max_consecutive):
-                self.model.addConstr(quicksum(
-                    self.plays[i, h, t] for i in range(s, s + self.max_consecutive + 1) for h in range(self.num_teams)
-                    if t != h) <= self.max_consecutive)
-                self.model.addConstr(quicksum(
-                    self.plays[i, t, a] for i in range(s, s + self.max_consecutive + 1) for a in range(self.num_teams)
-                    if t != a) <= self.max_consecutive)
 
 class GurobiSimpleSolver(BaseGurobiSportsSolver):
     """6개 팀 이상을 위한 간단한 Gurobi 모델."""
@@ -539,8 +590,7 @@ class GurobiSimpleSolver(BaseGurobiSportsSolver):
 
             total_breaks = quicksum(self.breaks.values())
             total_travel = quicksum(self.team_travel_vars)
-            break_penalty_weight = 100  # 가중치
-            self.model.setObjective(total_breaks * break_penalty_weight + total_travel, GRB.MINIMIZE)
+            self.model.setObjective(total_breaks * self.break_penalty_weight + total_travel, GRB.MINIMIZE)
 
         elif self.objective_choice == 'distance_gap':
             min_travel = self.model.addVar(vtype=GRB.INTEGER, name="min_travel")
@@ -584,7 +634,7 @@ class GurobiSimpleSolver(BaseGurobiSportsSolver):
                 if abs(is_home_s - is_home_s_plus_1) < 0.5:  # 연속
                     total_breaks += 1
         results['total_breaks'] = total_breaks
-
+        results['objective_choice'] = self.objective_choice
         return results
 
 class GurobiComplexSolver(BaseGurobiSportsSolver):
@@ -592,11 +642,23 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
     def __init__(self, input_data):
         super().__init__(input_data)
         self.is_at_loc = {}
-        self.original_team_to_idx = {name: idx for idx, name in enumerate(self.teams_original)}
-        self.home_city_of_team = {idx: self.original_team_to_idx.get(self.teams[idx], -1) for idx in range(self.num_teams)}
 
     def _create_location_variables(self):
-        self.is_at_loc = self.model.addVars(self.num_teams, self.num_slots, self.num_cities, vtype=GRB.BINARY,name="is_at_loc")
+        for t in range(self.num_teams_original):
+            for s in range(self.num_slots):
+                for c in range(self.num_teams_original):
+                    var_name = f"Atloc_{s + 1}_{self.teams[t]}_{self.city_list[c]}"
+                    self.is_at_loc[t, s, c] = self.model.addVar(vtype=GRB.BINARY, name=var_name)
+
+        if self.analysis_mode:
+            self.model.update()
+            for (t, s, c), var in self.is_at_loc.items():
+                self.analyzer.add_variable(
+                    var, 'Atloc',
+                    team=self.teams_original[t],
+                    slot=s + 1,
+                    city=self.city_list[c]  # 도시 이름으로 기록
+                )
 
     def _create_variables(self):
         super()._create_plays_variables()
@@ -729,12 +791,12 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
                     if abs(is_home_s - is_home_s_plus_1) < 0.5:
                         total_breaks += 1
         results['total_breaks'] = round(total_breaks)
-
+        results['objective_choice'] = self.objective_choice
         return results
 
 
 
-with open('../test_data/puzzles_sports_scheduling_data/gap_gurobi_team4.json', 'r', encoding='utf-8') as f:
+with open('../test_data/puzzles_sports_scheduling_data/minimize_travel_single_team4.json', 'r', encoding='utf-8') as f:
     input_data = json.load(f)
 
 solver_instance = SportsSolverFactory(input_data)
