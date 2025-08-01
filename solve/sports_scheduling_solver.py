@@ -484,6 +484,23 @@ class BaseGurobiSportsSolver(BaseSportsSchedulingSolver, BaseGurobiSolver):
             logger.error(f"Error creating plays variables: {e}")
             raise
 
+    def _create_team_travel_variables(self):
+        for t in range(self.num_teams_original):
+            var_name = f"Team_travel_{self.teams[t]}"
+            self.team_travel_vars.append(self.model.addVar(vtype=GRB.INTEGER, name=var_name))
+
+        if self.analysis_mode:
+                self.model.update() # Gurobi 모델의 내부 상태를 동기화하여 'VarName' 속성 접근 오류를 방지
+                for t, var in enumerate(self.team_travel_vars):
+                    related_info = {
+                        'home_team': self.teams[t]
+                    }
+                    self.analyzer.add_variable(var, 'Team_travel', **related_info)
+
+    def _create_common_variables(self):
+        self._create_plays_variables()
+        self._create_team_travel_variables()
+
     def _add_one_game_per_slot_constraint(self):
         """제약: 각 팀은 각 슬롯에서 정확히 한 경기만 수행합니다."""
         try:
@@ -561,7 +578,7 @@ class GurobiSimpleSolver(BaseGurobiSportsSolver):
     """6개 팀 이상을 위한 간단한 Gurobi 모델."""
 
     def _create_variables(self):
-        super()._create_plays_variables()
+        super()._create_common_variables()
 
     def _add_constraints(self):
         super()._add_common_constraints()
@@ -661,7 +678,7 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
                 )
 
     def _create_variables(self):
-        super()._create_plays_variables()
+        super()._create_common_variables()
         self._create_location_variables()
 
     def _add_location_constraints(self):
@@ -684,7 +701,6 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
 
     def _set_objective_function(self):
         logger.solve("--- 3. Setting Objective for Gurobi Complex Solver ---")
-        self.team_travel_vars = self.model.addVars(self.num_teams_original, vtype=GRB.INTEGER, name="team_travel")
 
         # 동적 이동 거리 계산
         for t in range(self.num_teams_original):
@@ -796,7 +812,7 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
 
 
 
-with open('../test_data/puzzles_sports_scheduling_data/minimize_travel_single_team4.json', 'r', encoding='utf-8') as f:
+with open('../test_data/puzzles_sports_scheduling_data/minimize_travel_double_team6.json', 'r', encoding='utf-8') as f:
     input_data = json.load(f)
 
 solver_instance = SportsSolverFactory(input_data)
