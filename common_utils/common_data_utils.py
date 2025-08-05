@@ -4,7 +4,7 @@ import os
 import json
 import logging
 
-from solve import settings
+import settings
 
 logger = logging.getLogger(__name__)
 

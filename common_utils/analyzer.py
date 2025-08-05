@@ -168,3 +168,233 @@ class GurobiModelAnalyzer:
     def close(self):
         self.cur.close()
         self.conn.close()
+
+
+class OrtoolsModelAnalyzer:
+    """
+    OR-Tools 최적화 모델의 구성 요소를 데이터베이스에 기록하는 클래스.
+    """
+
+    def __init__(self, run_id=None):
+        self.run_id = run_id if run_id else str(uuid.uuid4())
+        self.conn = psycopg2.connect(**db_config)
+        self.conn.autocommit = False  # manual commit
+        self.cur = self.conn.cursor()
+
+        logger.info(f"Initializing OrtoolsModelAnalyzer with run_id: {self.run_id}")
+        self._delete_existing()
+
+    def _delete_existing(self):
+        self.cur.execute("DELETE FROM analysis_matrixentry WHERE run_id = %s", (self.run_id,))
+        self.cur.execute("DELETE FROM analysis_variable WHERE run_id = %s", (self.run_id,))
+        self.cur.execute("DELETE FROM analysis_equation WHERE run_id = %s", (self.run_id,))
+        self.conn.commit()
+
+    def add_variable(self, var_name, var_type, lower_bound, upper_bound, **kwargs):
+        """
+        OR-Tools 변수 정보를 DB에 저장합니다.
+        kwargs를 통해 slot, home_team 등 추가 정보를 받습니다.
+        """
+        try:
+            sql = """
+                INSERT INTO analysis_variable (
+                    run_id, var_name, var_group, var_type, lower_bound, upper_bound,
+                    slot, home_team, away_team, team, city
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (run_id, var_name) DO NOTHING
+            """
+            self.cur.execute(sql, (
+                self.run_id,
+                var_name,
+                kwargs.get('var_group', 'default'),
+                var_type,
+                lower_bound,
+                upper_bound,
+                kwargs.get('slot'),
+                kwargs.get('home_team'),
+                kwargs.get('away_team'),
+                kwargs.get('team'),
+                kwargs.get('city'),
+            ))
+            self.conn.commit()
+        except Exception as e:
+            logger.error(f"analyzer.add_variable 에서 에러 발생: {e}", exc_info=True)
+            raise
+
+    def add_constraint(self, eq_name, eq_type, sign, rhs, **kwargs):
+        """
+        OR-Tools 제약 조건 정보를 DB에 저장합니다.
+        kwargs를 통해 slot, home_team 등 추가 정보를 받습니다.
+        """
+        try:
+            eq_sql = """
+                INSERT INTO analysis_equation (
+                    run_id, eq_name, eq_group, eq_type, sign, rhs,
+                    slot, home_team, away_team, team, city
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """
+            self.cur.execute(eq_sql, (
+                self.run_id,
+                eq_name,
+                kwargs.get('eq_group', 'default'),
+                eq_type,
+                sign,
+                rhs,
+                kwargs.get('slot'),
+                kwargs.get('home_team'),
+                kwargs.get('away_team'),
+                kwargs.get('team'),
+                kwargs.get('city'),
+            ))
+            equation_id = self.cur.fetchone()[0]
+            self.conn.commit()
+            return equation_id
+        except Exception as e:
+            logger.error(f"analyzer.add_constraint {eq_name} 에서 에러 발생: {e}", exc_info=True)
+            raise
+
+    def add_matrix_entry(self, variable_id, equation_id, coefficient):
+        """
+        OR-Tools 행렬 항목 정보를 DB에 저장합니다.
+        """
+        try:
+            matrix_sql = """
+                INSERT INTO analysis_matrixentry (run_id, variable_id, equation_id, coefficient)
+                VALUES (%s, %s, %s, %s)
+            """
+            self.cur.execute(matrix_sql, (self.run_id, variable_id, equation_id, coefficient))
+            self.conn.commit()
+        except Exception as e:
+            logger.error(f"analyzer.add_matrix_entry 에서 에러 발생: {e}", exc_info=True)
+            raise
+
+    def update_variable_results(self, model_obj):
+        """최적화가 끝난 모델 객체를 받아 모든 변수의 결과 값을 DB에 업데이트합니다."""
+        update_data = [
+            (model_obj.Value(var), self.run_id, var.Name()) for var in model_obj.variables()
+        ]
+
+        sql = """
+            UPDATE analysis_variable
+            SET result_value = %s
+            WHERE run_id = %s AND var_name = %s
+        """
+        self.cur.executemany(sql, update_data)
+        self.conn.commit()
+        logger.info(f"Updated results for {len(update_data)} variables.")
+
+
+class CpModelAnalyzer:
+    """
+    OR-Tools CP-SAT 모델의 구성 요소를 데이터베이스에 기록하는 클래스.
+    """
+
+    def __init__(self, run_id=None):
+        self.run_id = run_id if run_id else str(uuid.uuid4())
+        self.conn = psycopg2.connect(**db_config)
+        self.conn.autocommit = False  # manual commit
+        self.cur = self.conn.cursor()
+
+        logger.info(f"Initializing CpModelAnalyzer with run_id: {self.run_id}")
+        self._delete_existing()
+
+    def _delete_existing(self):
+        self.cur.execute("DELETE FROM analysis_matrixentry WHERE run_id = %s", (self.run_id,))
+        self.cur.execute("DELETE FROM analysis_variable WHERE run_id = %s", (self.run_id,))
+        self.cur.execute("DELETE FROM analysis_equation WHERE run_id = %s", (self.run_id,))
+        self.conn.commit()
+
+    def add_variable(self, var_name, var_type, lower_bound, upper_bound, **kwargs):
+        """
+        OR-Tools CP-SAT 변수 정보를 DB에 저장합니다.
+        kwargs를 통해 slot, home_team 등 추가 정보를 받습니다.
+        """
+        try:
+            sql = """
+                INSERT INTO analysis_variable (
+                    run_id, var_name, var_group, var_type, lower_bound, upper_bound,
+                    slot, home_team, away_team, team, city
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (run_id, var_name) DO NOTHING
+            """
+            self.cur.execute(sql, (
+                self.run_id,
+                var_name,
+                kwargs.get('var_group', 'default'),
+                var_type,
+                lower_bound,
+                upper_bound,
+                kwargs.get('slot'),
+                kwargs.get('home_team'),
+                kwargs.get('away_team'),
+                kwargs.get('team'),
+                kwargs.get('city'),
+            ))
+            self.conn.commit()
+        except Exception as e:
+            logger.error(f"analyzer.add_variable 에서 에러 발생: {e}", exc_info=True)
+            raise
+
+    def add_constraint(self, eq_name, eq_type, sign, rhs, **kwargs):
+        """
+        OR-Tools CP-SAT 제약 조건 정보를 DB에 저장합니다.
+        kwargs를 통해 slot, home_team 등 추가 정보를 받습니다.
+        """
+        try:
+            eq_sql = """
+                INSERT INTO analysis_equation (
+                    run_id, eq_name, eq_group, eq_type, sign, rhs,
+                    slot, home_team, away_team, team, city
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """
+            self.cur.execute(eq_sql, (
+                self.run_id,
+                eq_name,
+                kwargs.get('eq_group', 'default'),
+                eq_type,
+                sign,
+                rhs,
+                kwargs.get('slot'),
+                kwargs.get('home_team'),
+                kwargs.get('away_team'),
+                kwargs.get('team'),
+                kwargs.get('city'),
+            ))
+            equation_id = self.cur.fetchone()[0]
+            self.conn.commit()
+            return equation_id
+        except Exception as e:
+            logger.error(f"analyzer.add_constraint {eq_name} 에서 에러 발생: {e}", exc_info=True)
+            raise
+
+    def add_matrix_entry(self, variable_id, equation_id, coefficient):
+        """
+        OR-Tools CP-SAT 행렬 항목 정보를 DB에 저장합니다.
+        """
+        try:
+            matrix_sql = """
+                INSERT INTO analysis_matrixentry (run_id, variable_id, equation_id, coefficient)
+                VALUES (%s, %s, %s, %s)
+            """
+            self.cur.execute(matrix_sql, (self.run_id, variable_id, equation_id, coefficient))
+            self.conn.commit()
+        except Exception as e:
+            logger.error(f"analyzer.add_matrix_entry 에서 에러 발생: {e}", exc_info=True)
+            raise
+
+    def update_variable_results(self, model_obj):
+        """최적화가 끝난 모델 객체를 받아 모든 변수의 결과 값을 DB에 업데이트합니다."""
+        update_data = [
+            (model_obj.Value(var), self.run_id, var.Name()) for var in model_obj.variables()
+        ]
+
+        sql = """
+            UPDATE analysis_variable
+            SET result_value = %s
+            WHERE run_id = %s AND var_name = %s
+        """
+        self.cur.executemany(sql, update_data)
+        self.conn.commit()
+        logger.info(f"Updated results for {len(update_data)} variables.")

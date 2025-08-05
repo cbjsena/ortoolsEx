@@ -181,7 +181,7 @@ def run_sports_scheduling_optimizer_ortools1(input_data):
 
     # --- 4. 문제 해결 ---
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = settings.ORTOOLS_TIME_LIMIT
+    solver.parameters.max_time_in_seconds = settings.CP_TIME_LIMIT
     logger.info("Solving the Sports Scheduling model...")
     status = solver.Solve(model)
     logger.info(f"Solver status: {status}, Time: {solver.WallTime():.2f} sec")
@@ -474,7 +474,7 @@ def run_sports_scheduling_optimizer_ortools2(input_data):
         # --- 5. 문제 해결 ---
         solver = cp_model.CpSolver()
         # Gurobi: model.setParam('TimeLimit', ...)
-        solver.parameters.max_time_in_seconds = settings.ORTOOLS_TIME_LIMIT
+        solver.parameters.max_time_in_seconds = settings.CP_TIME_LIMIT
 
         solve_start_time = datetime.datetime.now()
         status = solver.Solve(model)
@@ -529,7 +529,7 @@ def run_sports_scheduling_optimizer_ortools2(input_data):
             results['total_breaks'] = total_breaks_calc
 
             if status == cp_model.FEASIBLE:
-                results['time_limit'] = f"Solver is limited {settings.ORTOOLS_TIME_LIMIT} sec. (sub-optimal solution)"
+                results['time_limit'] = f"Solver is limited {settings.CP_TIME_LIMIT} sec. (sub-optimal solution)"
 
         else:
             error_msg = f"OR-Tools 솔버가 해를 찾지 못했습니다. (상태: {solver.StatusName(status)})"

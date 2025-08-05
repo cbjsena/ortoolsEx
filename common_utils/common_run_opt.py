@@ -76,10 +76,12 @@ def get_solving_time_sec(solver):
     processing_time = time_raw if is_cp_sat else time_raw / 1000  # 초 단위로 통일
     return get_time(processing_time)
 
+
 def get_time(processing_time):
     return f"{processing_time:.3f}" if processing_time is not None else "N/A"
 
-def export_cp_model(model: cp_model.CpModel, filename: str):
+
+def get_mps_dir(filename: str):
     # 현재 파일 기준 상위 폴더의 mps 디렉토리 경로 구하기
     base_dir = os.path.dirname(os.path.abspath(__file__))  # 현재 파일 위치
     mps_dir = os.path.abspath(os.path.join(base_dir, "..", "mps"))
@@ -90,23 +92,49 @@ def export_cp_model(model: cp_model.CpModel, filename: str):
     # 전체 경로 설정
     file_path = os.path.join(mps_dir, filename)
 
+    return file_path
+
+
+def export_cp_model(model: cp_model.CpModel, filename: str):
+    """
+    CP-SAT 모델을 MPS 파일로 저장합니다.
+    :param model:
+    :param filename: 저장할 파일 이름 (확장자 포함)
+    :return:
+    """
+    file_path = get_mps_dir(filename)
+
+    # CP-SAT 모델을 MPS 파일로 저장
     proto = model.Proto()
     with open(file_path, "w") as f:
         f.write(text_format.MessageToString(proto))
 
 
 def export_ortools_solver(solver: pywraplp.Solver, filename: str):
-    # 현재 파일 기준 상위 폴더의 mps 디렉토리 경로 구하기
-    base_dir = os.path.dirname(os.path.abspath(__file__))  # 현재 파일 위치
-    mps_dir = os.path.abspath(os.path.join(base_dir, "..", "mps"))
+    """
+    OR-Tools 솔버 모델을 MPS 파일로 저장합니다.
+    :param solver:
+    :param filename: 저장할 파일 이름 (확장자 포함)
+    :return:
+    """
+    file_path = get_mps_dir(filename)
 
-    # 디렉토리가 없다면 생성
-    os.makedirs(mps_dir, exist_ok=True)
 
-    # 전체 경로 설정
-    file_path = os.path.join(mps_dir, filename)
+    solver.WriteModelToMpsFile(get_mps_dir(file_path), True, False)
+    logger.info(f"OR-Tools model exported to {file_path}")
 
-    solver.WriteModelToMpsFile(file_path, True, False)
+
+def export_gurobi_model(model, filename: str):
+    """
+    Gurobi 모델을 MPS 파일로 저장합니다.
+    :param model: Gurobi 모델 객체
+    :param filename: 저장할 파일 이름 (확장자 포함)
+    """
+    file_path = get_mps_dir(filename)
+
+    # Gurobi 모델을 MPS 파일로 저장
+    model.write(file_path)
+    logger.info(f"Gurobi model exported to {file_path}")
 
 
 def parse_pb_file(filename: str) -> tuple[list[str], dict[int, dict[str, any]]]:
@@ -251,6 +279,7 @@ def parse_pb_file(filename: str) -> tuple[list[str], dict[int, dict[str, any]]]:
         traceback.print_exc()
 
     return var_names, constraints
+
 
 def desc_model_by_line(line_no:int, var_names: list[str], constraints: list[dict[str, any]]):
     try:

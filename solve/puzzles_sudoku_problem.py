@@ -55,7 +55,7 @@ def run_sudoku_solver_optimizer(input_data):
 
     # 3. 문제 해결
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = settings.ORTOOLS_TIME_LIMIT
+    solver.parameters.max_time_in_seconds = settings.CP_TIME_LIMIT
 
     solve_start_time = datetime.datetime.now()
     status = solver.Solve(model)
