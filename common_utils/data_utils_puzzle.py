@@ -3,7 +3,7 @@ from collections import Counter
 from common_utils.common_data_utils import save_json_data
 import logging
 import math
-from solve.settings import *
+from settings import *
 
 logger = logging.getLogger(__name__)
 

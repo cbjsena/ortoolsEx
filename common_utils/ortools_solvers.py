@@ -1,4 +1,3 @@
-import json
 import logging
 import time
 from math import sqrt
@@ -8,6 +7,7 @@ from ortools.sat.python import cp_model
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
 from core.decorators import log_solver_solve
+import settings
 from .base_solver import BaseSolver
 from .common_run_opt import export_ortools_solver, export_cp_model
 
@@ -34,16 +34,18 @@ class BaseOrtoolsLinearSolver(BaseSolver):
         if not self.solver:
             raise Exception(f"{solver_name} Solver not available.")
 
+
     @log_solver_solve
     def solve(self):
         try:
             self._create_variables()
             self._add_constraints()
             self._set_objective_function()
+            if settings.SAVE_MODEL_FILE:
+                export_ortools_solver(self.solver, f'ortools_{self.problem_type}.mps')
 
             status = self.solver.Solve()
             processing_time = self.get_time(self.solver.WallTime() / 1000.0)
-            export_ortools_solver(self.solver, f'{self.problem_type}.mps')
             self.log_solve_resulte(self.status_map.get(status, "UNKNOWN"), processing_time)
 
             if status == pywraplp.Solver.OPTIMAL or status == pywraplp.Solver.FEASIBLE:
@@ -76,6 +78,7 @@ class BaseOrtoolsCpSolver(BaseSolver):
         self.model = cp_model.CpModel()
         if not hasattr(self.model, 'named_constraints'):
             self.model.named_constraints = {}
+
         # CP-SAT에서는 solve 객체를 solve 직전에 생성합니다.
 
     def _extract_results(self, solver):
@@ -88,15 +91,19 @@ class BaseOrtoolsCpSolver(BaseSolver):
             self._create_variables()
             self._add_constraints()
             self._set_objective_function()
+            if settings.SAVE_MODEL_FILE:
+                export_cp_model(self.model, f'cp_{self.problem_type}.mps')
 
             solver = cp_model.CpSolver()
-            # solve.parameters.max_time_in_seconds = 30.0 # 필요시 시간 제한 설정
-            export_cp_model(self.model, f'ortools_{self.problem_type}.mps')
+            solver.parameters.max_time_in_seconds = settings.CP_TIME_LIMIT
             status = solver.Solve(self.model)
             processing_time = self.get_time(solver.WallTime())
             self.log_solve_resulte(solver.StatusName(status), processing_time)
 
             if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+                if self.analysis_mode:
+                    self.analyzer.update_variable_results(solver, self.variables_to_log)
+
                 if status == status == cp_model.FEASIBLE:
                     msg = "Feasible solution found, but it might not be optimal."
                     logger.warning(msg)

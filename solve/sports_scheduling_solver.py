@@ -2,8 +2,10 @@ import json
 import logging
 from gurobipy import Model, GRB, quicksum  # Gurobi 사용을 위해 import
 
+import settings
 from common_utils.gurobi_solvers import BaseGurobiSolver
 from common_utils.ortools_solvers import BaseOrtoolsCpSolver
+from common_utils.sport_schedule_analyzer import GurobiModelAnalyzer, OrtoolsCpModelAnalyzer
 from core.decorators import log_solver_make
 
 from logging_config import setup_logger
@@ -81,6 +83,7 @@ class BaseSportsSchedulingSolver:
         self.original_team_to_idx = {name: idx for idx, name in enumerate(self.teams_original)}
         self.home_city_of_team = {idx: self.original_team_to_idx.get(self.teams[idx], -1) for idx in range(self.num_teams)}
 
+
 class BaseOrtoolsSportsSolver(BaseSportsSchedulingSolver, BaseOrtoolsCpSolver):
     """OR-Tools CP-SAT 솔버를 위한 공통 로직을 포함하는 기본 클래스."""
 
@@ -92,6 +95,12 @@ class BaseOrtoolsSportsSolver(BaseSportsSchedulingSolver, BaseOrtoolsCpSolver):
         self.break_vars = []
         self.max_dist = sum(self.distance_matrix[0]) * self.num_slots  # 최대 이동 거리 계산
 
+        self.analysis_mode = False
+        if settings.SAVE_MODEL_DB:
+            self.analysis_mode = True
+            self.variables_to_log = []
+            self.analyzer = OrtoolsCpModelAnalyzer(input_data.get('run_id', None))
+
     @log_solver_make
     def _create_plays_variables(self):
         """plays[s, h, a]: 시간 s에 홈팀 h가 원정팀 a와 경기하면 1 """
@@ -101,7 +110,19 @@ class BaseOrtoolsSportsSolver(BaseSportsSchedulingSolver, BaseOrtoolsCpSolver):
                     if h != a:
                         var = self.model.NewBoolVar(f'plays_{s + 1}_{self.teams[h]}_{self.teams[a]}')
                         self.plays[(s, h, a)] = var
-                        logger.solve(f"Var: {var.Name()}")
+
+        if self.analysis_mode:
+            for (s, h, a), var in self.plays.items():
+                if h == a: continue
+                related_info = {
+                    'lower_bound': 0,
+                    'upper_bound': 1,
+                    'slot': s + 1,
+                    'home_team': self.teams[h],
+                    'away_team': self.teams[a]
+                }
+                self.variables_to_log.append(var)
+                self.analyzer.add_variable(var, var_group='Plays', **related_info)
 
     def _add_one_game_per_slot_constraint(self):
         """제약: 각 팀은 각 슬롯에서 정확히 한 경기만 수행합니다."""
@@ -197,6 +218,7 @@ class BaseOrtoolsSportsSolver(BaseSportsSchedulingSolver, BaseOrtoolsCpSolver):
         self.model.AddMaxEquality(max_travel, self.team_travel_vars)
         return max_travel - min_travel
 
+
 class OrtoolsSimpleSolver(BaseOrtoolsSportsSolver):
     """6개 팀 이상을 위한 간단한 OR-Tools 모델."""
 
@@ -223,6 +245,9 @@ class OrtoolsSimpleSolver(BaseOrtoolsSportsSolver):
             self.model.Minimize(distance_gap * PRIMARY_WEIGHT + total_travel)
 
     def _extract_results(self, solver):
+        if settings.SAVE_MODEL_DB:
+            self.analyzer.update_variable_results(solver, self.variables_to_log)
+
         results = {'schedule': [], 'has_bye': self.has_bye, 'total_distance': 'N/A', 'team_distances': []}
 
         schedule = []
@@ -272,9 +297,20 @@ class OrtoolsComplexSolver(BaseOrtoolsSportsSolver):
         for t in range(self.num_teams_original):
             for s in range(self.num_slots):
                 for l in range(self.num_cities):
-                    var = self.model.NewBoolVar(f"is_at_loc_{self.teams[t]}_{s + 1}_{l}")
+                    var = self.model.NewBoolVar(f"Atloc_{self.teams[t]}_{s + 1}_{l}")
                     self.is_at_loc[t, s, l] = var
-                    logger.solve(f"Var: {var.Name()}")
+
+        if self.analysis_mode:
+            for (t, s, l), var in self.is_at_loc.items():
+                related_info = {
+                    'lower_bound': 0,
+                    'upper_bound': 1,
+                    'slot': s + 1,
+                    'team': self.teams[t],
+                    'city': self.teams[l]
+                }
+                self.variables_to_log.append(var)
+                self.analyzer.add_variable(var, var_group='Atloc', **related_info)
 
     def _create_variables(self):
         super()._create_plays_variables()
@@ -402,6 +438,9 @@ class OrtoolsComplexSolver(BaseOrtoolsSportsSolver):
             logger.debug("Objective set to: Minimize distance gap.")
 
     def _extract_results(self, solver):
+        if self.analysis_mode:
+            self.analyzer.update_variable_results(solver, self.variables_to_log)
+
         results = {'schedule': [], 'has_bye': self.has_bye, 'total_distance': 0, 'team_distances': [], 'total_breaks': 0,
                    'distance_gap': 0}
 
@@ -459,6 +498,10 @@ class BaseGurobiSportsSolver(BaseSportsSchedulingSolver, BaseGurobiSolver):
         self.plays = {}
         self.breaks = {}
         self.team_travel_vars = []
+        self.analysis_mode = False
+        if settings.SAVE_MODEL_DB:
+            self.analysis_mode = True
+            self.analyzer = GurobiModelAnalyzer(input_data.get('run_id', None))
 
     def _create_plays_variables(self):
         try:
@@ -617,6 +660,9 @@ class GurobiSimpleSolver(BaseGurobiSportsSolver):
             self.model.setObjective(max_travel - min_travel, GRB.MINIMIZE)
 
     def _extract_results(self):
+        if self.analysis_mode:
+            self.analyzer.update_variable_results(self.model)
+
         logger.info("Extracting results for Gurobi Simple Solver...")
         results = {'schedule': [], 'has_bye': self.has_bye, 'total_distance': 0, 'team_distances': [],
                    'total_breaks': 0, 'distance_gap': 0}
@@ -654,6 +700,7 @@ class GurobiSimpleSolver(BaseGurobiSportsSolver):
         results['objective_choice'] = self.objective_choice
         return results
 
+
 class GurobiComplexSolver(BaseGurobiSportsSolver):
     """5개 팀 이하를 위한 복잡한 Gurobi 모델."""
     def __init__(self, input_data):
@@ -687,13 +734,29 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
             for t in range(self.num_teams_original):
                 # 팀 t가 홈 경기 시, 위치는 자신의 홈
                 is_home = quicksum(self.plays[s, t, a] for a in range(self.num_teams) if t != a)
-                self.model.addConstr(self.is_at_loc[t, s, self.home_city_of_team[t]] >= is_home)
+                eq_name = f"Location_home_{self.teams_original[t]}_{s + 1}"
+                eq = self.model.addConstr(self.is_at_loc[t, s, self.home_city_of_team[t]] >= is_home,
+                                          name=eq_name)
+                if self.analysis_mode:
+                    self.analyzer.add_constraint(self.model, eq, 'Location_home', team=self.teams_original[t], slot=s + 1)
+
                 # 팀 t가 원정 경기 시, 위치는 상대팀 h의 홈
                 for h in range(self.num_teams_original):
                     if t != h:
-                        self.model.addConstr(self.is_at_loc[t, s, self.home_city_of_team[h]] >= self.plays[s, h, t])
+                        eq_name = f"Location_away_{self.teams_original[t]}_{self.teams_original[h]}_{s}"
+                        eq = self.model.addConstr(self.is_at_loc[t, s, self.home_city_of_team[h]] >= self.plays[s, h, t],
+                                                  name=eq_name)
+                        if self.analysis_mode:
+                            self.analyzer.add_constraint(self.model, eq, 'Location_away', team=self.teams_original[t],
+                                                         opponent=self.teams_original[h], slot=s + 1)
+
+            # 각 팀은 한 슬롯에 한 곳에만 위치
             for t in range(self.num_teams_original):
-                self.model.addConstr(quicksum(self.is_at_loc[t, s, l] for l in range(self.num_cities)) == 1)
+                eq_name =f"Loc_once_{self.teams_original[t]}_{s}"
+                eq = self.model.addConstr(quicksum(self.is_at_loc[t, s, l] for l in range(self.num_cities)) == 1,
+                                              name=eq_name)
+                if self.analysis_mode:
+                    self.analyzer.add_constraint(self.model, eq, 'Loc_once_', team=self.teams_original[t], slot=s + 1)
 
     def _add_constraints(self):
         super()._add_common_constraints()
@@ -701,6 +764,7 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
 
     def _set_objective_function(self):
         logger.solve("--- 3. Setting Objective for Gurobi Complex Solver ---")
+        self.team_travel_vars = self.model.addVars(self.num_teams_original, vtype=GRB.INTEGER, name="team_travel")
 
         # 동적 이동 거리 계산
         for t in range(self.num_teams_original):
@@ -712,6 +776,7 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
                     self.model.addConstr(initial_loc_vars[l] == 1)
                 else:
                     self.model.addConstr(initial_loc_vars[l] == 0)
+
             for s in range(self.num_slots):
                 if s == 0:
                     prev_loc_vars = [initial_loc_vars[l] for l in range(self.num_cities)]
@@ -738,7 +803,7 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
 
         # 목표 함수 선택
         if self.objective_choice == 'minimize_travel':
-            self.model.setObjective(quicksum(self.team_travel_vars), GRB.MINIMIZE)
+            self.model.setObjective(quicksum(self.team_travel_vars[t] for t in range(self.num_teams_original)), GRB.MINIMIZE)
         elif self.objective_choice == 'fairness':
             self.breaks = self.model.addVars(self.num_teams_original, self.num_slots - 1, vtype=GRB.BINARY, name="breaks")
             for t in range(self.num_teams_original):
@@ -770,6 +835,9 @@ class GurobiComplexSolver(BaseGurobiSportsSolver):
             self.model.setObjective(max_travel - min_travel, GRB.MINIMIZE)
 
     def _extract_results(self):
+        if self.analysis_mode:
+            self.analyzer.update_variable_results(self.model)
+
         logger.info("Extracting results for Gurobi Complex Solver...")
         results = {'schedule': [], 'has_bye': self.has_bye, 'total_distance': 0, 'team_distances': [], 'total_breaks': 0,
                    'distance_gap': 0}
